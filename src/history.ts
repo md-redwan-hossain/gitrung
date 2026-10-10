@@ -1,9 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { projectRoot } from "./load-config.ts";
 import {
-  formatZodError,
   HistoryFileSchema,
   type HistoryFile,
   type WorkflowHistoryEntry,
@@ -36,7 +35,7 @@ function parseHistoryFile(path: string): HistoryFile {
     return HistoryFileSchema.parse(data);
   } catch (err) {
     if (err instanceof ZodError) {
-      throw new Error(`Invalid ${METADATA_FILE}:\n${formatZodError(err)}`);
+      throw new Error(`Invalid ${METADATA_FILE}:\n${z.prettifyError(err)}`);
     }
     throw err;
   }

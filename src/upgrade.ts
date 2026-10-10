@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { checkUpgradeWriteAccess } from "./io-access.ts";
+import { checkUpgradeWriteAccess, isBunRuntime } from "./io-access.ts";
 import { createSpinner } from "./spinner.ts";
 
 const RELEASE_BASE =
@@ -50,11 +50,6 @@ function resolvePlatformAsset(): PlatformAsset {
   throw new Error(
     `Unsupported platform: ${process.platform}/${process.arch}.`,
   );
-}
-
-function isBunRuntime(): boolean {
-  const executable = basename(process.execPath).toLowerCase();
-  return executable === "bun" || executable === "bun.exe";
 }
 
 function formatBytes(bytes: number): string {

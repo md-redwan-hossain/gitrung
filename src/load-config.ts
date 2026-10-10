@@ -1,10 +1,8 @@
-import * as p from "@clack/prompts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import {
   RepoFileSchema,
-  formatZodError,
   type AppConfig,
   type GitPlatform,
   type RepoConfig,
@@ -165,14 +163,12 @@ export function tryLoadConfig(configDir?: string): LoadConfigResult {
       delete record.label;
     }
 
-    collectSoftWarnings(label, record, warnings);
-
     try {
       const parsed = RepoFileSchema.parse(record);
       repos.push({ ...parsed, label });
     } catch (err) {
       if (err instanceof ZodError) {
-        errors.push(`${fileName}: invalid config:\n${formatZodError(err)}`);
+        errors.push(`${fileName}: invalid config:\n${z.prettifyError(err)}`);
       } else {
         throw err;
       }
@@ -195,23 +191,6 @@ export function tryLoadConfig(configDir?: string): LoadConfigResult {
   return { ok: true, config: repos, path, warnings };
 }
 
-export function loadConfig(configDir?: string): AppConfig {
-  const result = tryLoadConfig(configDir);
-  if (!result.ok) {
-    for (const err of result.errors) {
-      p.log.warn(err);
-    }
-    for (const w of result.warnings) {
-      p.log.warn(w);
-    }
-    process.exit(1);
-  }
-  for (const w of result.warnings) {
-    p.log.warn(w);
-  }
-  return result.config;
-}
-
 export function loadToken(gitPlatform: GitPlatform): string {
   if (gitPlatform === "github") {
     const token = process.env.GITHUB_TOKEN?.trim();
@@ -230,44 +209,4 @@ export function loadToken(gitPlatform: GitPlatform): string {
     );
   }
   return token;
-}
-
-function collectSoftWarnings(
-  label: string,
-  repo: Record<string, unknown>,
-  warnings: string[],
-): void {
-  const steps = repo.steps;
-  if (!Array.isArray(steps)) return;
-  for (const [stepIndex, step] of steps.entries()) {
-    warnStaleInteractive(label, `steps[${stepIndex}]`, step, warnings);
-  }
-}
-
-function warnStaleInteractive(
-  label: string,
-  path: string,
-  step: unknown,
-  warnings: string[],
-): void {
-  if (!step || typeof step !== "object" || Array.isArray(step)) return;
-  const s = step as Record<string, unknown>;
-  if ("interactive" in s) {
-    warnings.push(
-      `${label} ${path}: stale key "interactive" (remove it; inputs prompt when workflow_dispatch.inputs exist)`,
-    );
-  }
-  const options = s.options;
-  if (options && typeof options === "object" && !Array.isArray(options)) {
-    if ("interactive" in (options as Record<string, unknown>)) {
-      warnings.push(
-        `${label} ${path}.options: stale key "interactive" (remove it; inputs prompt when workflow_dispatch.inputs exist)`,
-      );
-    }
-  }
-  if (s.type === "one-of" && Array.isArray(s.items)) {
-    for (const [itemIndex, item] of s.items.entries()) {
-      warnStaleInteractive(label, `${path}.items[${itemIndex}]`, item, warnings);
-    }
-  }
 }

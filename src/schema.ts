@@ -116,9 +116,6 @@ export const StepGroupSchema = z
 
 export const PipelineStepSchema = z.union([LeafStepSchema, StepGroupSchema]);
 
-/** @deprecated Prefer LeafStepSchema / PipelineStepSchema */
-export const StepSchema = LeafStepSchema;
-
 /** On-disk repo file shape (label comes from the filename). */
 export const RepoFileSchema = z.object({
   url: z.url(),
@@ -283,8 +280,6 @@ export type MergePrStep = z.infer<typeof MergePrStepSchema>;
 export type LeafStep = z.infer<typeof LeafStepSchema>;
 export type StepGroup = z.infer<typeof StepGroupSchema>;
 export type PipelineStep = z.infer<typeof PipelineStepSchema>;
-/** Leaf step alias for older call sites. */
-export type Step = LeafStep;
 export type WorkflowInputValues = z.infer<typeof WorkflowInputValuesSchema>;
 export type WorkflowHistoryEntry = z.infer<typeof WorkflowHistoryEntrySchema>;
 export type HistoryFile = z.infer<typeof HistoryFileSchema>;
@@ -331,13 +326,4 @@ export function stepKey(stepIndex: number, subIndex?: number): string {
   return subIndex === undefined
     ? String(stepIndex)
     : `${stepIndex}:${subIndex}`;
-}
-
-export function formatZodError(err: z.ZodError): string {
-  return err.issues
-    .map((issue) => {
-      const path = issue.path.length > 0 ? issue.path.join(".") : "(root)";
-      return `${path}: ${issue.message}`;
-    })
-    .join("\n");
 }

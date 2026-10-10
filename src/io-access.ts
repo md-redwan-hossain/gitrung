@@ -7,7 +7,7 @@ export type IoCheckResult = {
   warnings: string[];
 };
 
-function isBunRuntime(): boolean {
+export function isBunRuntime(): boolean {
   const executable = basename(process.execPath).toLowerCase();
   return executable === "bun" || executable === "bun.exe";
 }

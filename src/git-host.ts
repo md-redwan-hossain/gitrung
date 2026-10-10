@@ -1,3 +1,4 @@
+import { z, ZodError } from "zod";
 import {
   LooseObjectSchema,
   WorkflowRunsResponseSchema,
@@ -11,6 +12,168 @@ import {
 } from "./schema.ts";
 
 export type { CommitStatus, ContentFile, PullRequest, WorkflowRun };
+
+/** Shared REST fetch config for GitHub / Gitea clients. */
+export type HostRequestConfig = {
+  apiBase: string;
+  label: string;
+  headers: Record<string, string>;
+};
+
+export async function hostRequest(
+  config: HostRequestConfig,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
+  const url = `${config.apiBase}${path}`;
+  const headers: Record<string, string> = { ...config.headers };
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
+  }
+
+  const res = await fetch(url, init);
+  if (res.status === 204) {
+    return undefined;
+  }
+
+  const text = await res.text();
+  let data: unknown = undefined;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+
+  if (!res.ok) {
+    const message =
+      typeof data === "object" &&
+      data !== null &&
+      "message" in data &&
+      typeof (data as { message: unknown }).message === "string"
+        ? (data as { message: string }).message
+        : text || res.statusText;
+    throw new Error(
+      `${config.label} ${method} ${path} → ${res.status}: ${message}`,
+    );
+  }
+
+  return data;
+}
+
+export async function hostRequestParsed<S extends z.ZodType>(
+  config: HostRequestConfig,
+  method: string,
+  path: string,
+  schema: S,
+  body?: unknown,
+): Promise<z.infer<S>> {
+  const data = await hostRequest(config, method, path, body);
+  try {
+    return schema.parse(data);
+  } catch (err) {
+    if (err instanceof ZodError) {
+      throw new Error(
+        `Invalid ${config.label} response ${method} ${path}:\n${z.prettifyError(err)}`,
+      );
+    }
+    throw err;
+  }
+}
+
+export async function listPullRequestsPaged(
+  fetchPage: (page: number, perPage: number) => Promise<PullRequest[]>,
+  perPage = 50,
+  maxPages = 2,
+): Promise<PullRequest[]> {
+  const all: PullRequest[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const batch = await fetchPage(page, perPage);
+    if (batch.length === 0) break;
+    all.push(...batch);
+    if (batch.length < perPage) break;
+  }
+  return all;
+}
+
+export function findOpenPullRequestInList(
+  open: PullRequest[],
+  head: string,
+  base: string,
+): PullRequest | undefined {
+  return open.find(
+    (pr) =>
+      normalizeRef(pr.head?.ref) === normalizeRef(head) &&
+      normalizeRef(pr.base?.ref) === normalizeRef(base),
+  );
+}
+
+export function decodeBase64ContentFile(file: ContentFile): string {
+  if (file.encoding !== "base64") {
+    throw new Error(`Unexpected content encoding: ${file.encoding}`);
+  }
+  return Buffer.from(file.content.replace(/\n/g, ""), "base64").toString(
+    "utf8",
+  );
+}
+
+export async function branchExistsFromGet(
+  get: () => Promise<unknown>,
+): Promise<boolean> {
+  try {
+    await get();
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("→ 404")) return false;
+    throw err;
+  }
+}
+
+export async function collectWorkflowRunsFromPaths(opts: {
+  paths: string[];
+  workflowFile: string;
+  request: (path: string) => Promise<unknown>;
+  includeRaw: (pathIndex: number, path: string, raw: unknown) => boolean;
+}): Promise<WorkflowRun[]> {
+  const byId = new Map<number, WorkflowRun>();
+  let lastError: unknown;
+  let anyOk = false;
+
+  for (const [i, path] of opts.paths.entries()) {
+    try {
+      const data = await opts.request(path);
+      const rawRuns = extractWorkflowRuns(data);
+      for (const raw of rawRuns) {
+        const run = normalizeWorkflowRun(raw);
+        if (!run) continue;
+        if (!opts.includeRaw(i, path, raw)) continue;
+        byId.set(run.id, run);
+      }
+      anyOk = true;
+    } catch (err) {
+      lastError = err;
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("→ 404")) {
+        throw err;
+      }
+    }
+  }
+
+  if (!anyOk && byId.size === 0) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`Failed to list runs for ${opts.workflowFile}`);
+  }
+
+  return [...byId.values()].sort(
+    (a, b) => (runSortMs(b) ?? 0) - (runSortMs(a) ?? 0),
+  );
+}
 
 export interface GitHostClient {
   readonly owner: string;

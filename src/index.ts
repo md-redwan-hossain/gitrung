@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import * as p from "@clack/prompts";
 import chalk from "chalk";
+import Table from "cli-table3";
 import { Command } from "commander";
 import { createGitClient } from "./create-git-client.ts";
 import { reportHealthResult, runDoctor, runHealthChecks } from "./doctor.ts";
@@ -111,6 +112,9 @@ async function runPipeline(opts: {
   } = await runAskUpfrontPhase(client, repo.label, repo.steps);
 
   for (const [index, step] of repo.steps.entries()) {
+    // Early-run / ask-upfront already logged these; do not reprint.
+    if (alreadyRan.has(index) || skipped.has(index)) continue;
+
     if (isStepGroup(step)) {
       await runGroupStep(
         client,
@@ -124,7 +128,6 @@ async function runPipeline(opts: {
           sourceBranches,
           selectedSubSteps,
           mergePrNumbers,
-          alreadyRan,
         },
       );
       continue;
@@ -150,7 +153,6 @@ async function runPipeline(opts: {
         skipped,
         sourceBranches,
         mergePrNumbers,
-        alreadyRan,
       },
     );
   }
@@ -164,7 +166,6 @@ type PipelineMaps = {
   sourceBranches: SourceBranchMap;
   selectedSubSteps: SelectedSubStepMap;
   mergePrNumbers: MergePrNumberMap;
-  alreadyRan: Set<number>;
 };
 
 /** list-pr steps with runBeforeAskUpfront run before ask-upfront prompts; indices skipped in the main loop. */
@@ -246,7 +247,11 @@ async function runAskUpfrontLeaf(
     if (result.action === "skip") {
       maps.skipped.add(index);
       p.log.info(
-        `Will skip step ${index + 1}: ${formatStepLabel(leaf, initial)}`,
+        formatStepBlock(
+          `Will skip step ${index + 1}: `,
+          leaf,
+          initial,
+        ),
       );
       return;
     }
@@ -277,7 +282,7 @@ async function runAskUpfrontLeaf(
     const ok = await confirmRunWorkflowStep(leaf, index, totalSteps);
     if (!ok) {
       maps.skipped.add(index);
-      p.log.info(`Will skip step ${index + 1}: ${formatStepLabel(leaf)}`);
+      p.log.info(formatStepBlock(`Will skip step ${index + 1}: `, leaf));
       return;
     }
     await validateRunWorkflowRemote(client, leaf);
@@ -394,7 +399,7 @@ async function selectSubStep(
     message: `Which one-of item to run for ${chalk.yellow(`[${groupIndex + 1}/${totalSteps}]`)}?`,
     options: group.items.map((child, i) => ({
       value: i,
-      label: formatStepLabel(child),
+      label: chalk.green(child.type),
     })),
   });
 
@@ -465,56 +470,107 @@ async function pickRepo(
   return repos.find((r) => r.label === selected)!;
 }
 
-function formatStepParams(step: LeafStep, resolvedSource?: string): string {
+type ParamRow = { key: string; value: string };
+
+function stepParamRows(
+  step: LeafStep,
+  resolvedSource?: string,
+): ParamRow[] {
   if (step.type === "create-pr") {
     const source = resolvedSource ?? step.sourceBranch ?? "prompt";
     return [
-      `source=${source}`,
-      `destination=${step.destinationBranch}`,
-      `merge=${step.merge}`,
-      `afterMerge.waitFor=${step.merge ? step.afterMerge.waitFor.join(",") || "—" : "—"}`,
-      `askUpfront=${step.askUpfront}`,
-      `confirmBeforeRun=${step.confirmBeforeRun}`,
-    ].join(", ");
+      { key: "source", value: source },
+      { key: "destination", value: step.destinationBranch },
+      { key: "merge", value: String(step.merge) },
+      {
+        key: "afterMerge.waitFor",
+        value: step.merge
+          ? step.afterMerge.waitFor.join(",") || "—"
+          : "—",
+      },
+      { key: "askUpfront", value: String(step.askUpfront) },
+      { key: "confirmBeforeRun", value: String(step.confirmBeforeRun) },
+    ];
   }
   if (step.type === "list-pr") {
-    const parts = [`status=${step.status}`];
-    if (step.user) parts.push(`user=${step.user}`);
-    parts.push(`runBeforeAskUpfront=${step.runBeforeAskUpfront}`);
-    return parts.join(", ");
+    const rows: ParamRow[] = [{ key: "status", value: step.status }];
+    if (step.user) rows.push({ key: "user", value: step.user });
+    rows.push({
+      key: "runBeforeAskUpfront",
+      value: String(step.runBeforeAskUpfront),
+    });
+    return rows;
   }
   if (step.type === "merge-pr") {
-    if (step.when.length === 0) return "when=—";
-    return step.when
-      .map(
-        (w) =>
-          `when: destinationBranch=${w.destinationBranch}, waitFor=${w.waitFor.join(",")}`,
-      )
-      .join("; ");
+    if (step.when.length === 0) {
+      return [{ key: "when", value: "—" }];
+    }
+    return step.when.flatMap((w, i) => {
+      const prefix = step.when.length === 1 ? "when" : `when[${i}]`;
+      return [
+        { key: `${prefix}.destinationBranch`, value: w.destinationBranch },
+        { key: `${prefix}.waitFor`, value: w.waitFor.join(",") },
+      ];
+    });
   }
-  const parts = [
-    `workflow=${step.workflow}`,
-    `useWorkflowFromBranch=${step.useWorkflowFromBranch}`,
-    `askUpfront=${step.askUpfront}`,
-    `confirmBeforeRun=${step.confirmBeforeRun}`,
-    `waitUntilFinish=${step.waitUntilFinish}`,
-    `exitOnError=${step.exitOnError}`,
+  const rows: ParamRow[] = [
+    { key: "workflow", value: step.workflow },
+    { key: "useWorkflowFromBranch", value: step.useWorkflowFromBranch },
+    { key: "askUpfront", value: String(step.askUpfront) },
+    { key: "confirmBeforeRun", value: String(step.confirmBeforeRun) },
+    { key: "waitUntilFinish", value: String(step.waitUntilFinish) },
+    { key: "exitOnError", value: String(step.exitOnError) },
   ];
-  if (step.when.length > 0) {
-    parts.push(
-      step.when
-        .map(
-          (w) =>
-            `when: actionInputId=${w.actionInputId}, repeat=${w.repeat}`,
-        )
-        .join("; "),
+  for (const [i, w] of step.when.entries()) {
+    const prefix = step.when.length === 1 ? "when" : `when[${i}]`;
+    rows.push(
+      { key: `${prefix}.actionInputId`, value: w.actionInputId },
+      { key: `${prefix}.repeat`, value: String(w.repeat) },
     );
   }
-  return parts.join(", ");
+  return rows;
 }
 
-function formatStepLabel(step: LeafStep, resolvedSource?: string): string {
-  return `${chalk.green(step.type)} (${formatStepParams(step, resolvedSource)})`;
+function formatParamTable(rows: ParamRow[]): string {
+  if (rows.length === 0) return "";
+  const table = new Table({
+    chars: {
+      top: "═",
+      "top-mid": "╤",
+      "top-left": "╔",
+      "top-right": "╗",
+      bottom: "═",
+      "bottom-mid": "╧",
+      "bottom-left": "╚",
+      "bottom-right": "╝",
+      left: "║",
+      "left-mid": "",
+      mid: "",
+      "mid-mid": "",
+      right: "║",
+      "right-mid": "",
+      middle: "│",
+    },
+    style: { head: [], border: [], "padding-left": 1, "padding-right": 1 },
+  });
+  for (const row of rows) {
+    table.push([row.key, row.value]);
+  }
+  return table
+    .toString()
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n");
+}
+
+function formatStepBlock(
+  prefix: string,
+  step: LeafStep,
+  resolvedSource?: string,
+): string {
+  const header = `${prefix}${chalk.green(step.type)}`;
+  const table = formatParamTable(stepParamRows(step, resolvedSource));
+  return table ? `${header}\n${table}` : header;
 }
 
 function formatStepLine(
@@ -523,7 +579,11 @@ function formatStepLine(
   step: LeafStep,
   resolvedSource?: string,
 ): string {
-  return `${chalk.yellow(`[${index + 1}/${total}]`)} ${formatStepLabel(step, resolvedSource)}`;
+  return formatStepBlock(
+    `${chalk.yellow(`[${index + 1}/${total}]`)} `,
+    step,
+    resolvedSource,
+  );
 }
 
 async function runGroupStep(
@@ -534,17 +594,8 @@ async function runGroupStep(
   totalSteps: number,
   maps: PipelineMaps,
 ): Promise<void> {
-  if (maps.skipped.has(groupIndex)) {
-    const subIndex = maps.selectedSubSteps.get(groupIndex);
-    const child =
-      subIndex !== undefined ? group.items[subIndex] : undefined;
-    p.log.info(
-      child
-        ? `Skipped (declined earlier): ${formatStepLabel(child, maps.sourceBranches.get(stepKey(groupIndex, subIndex)))}`
-        : `Skipped (declined earlier): one-of (askUpfront=${group.askUpfront})`,
-    );
-    return;
-  }
+  // Main loop already continues for skipped; keep as a quiet guard.
+  if (maps.skipped.has(groupIndex)) return;
 
   let subIndex = maps.selectedSubSteps.get(groupIndex);
   if (subIndex === undefined) {
@@ -570,12 +621,7 @@ async function runGroupStep(
     key,
     groupIndex,
     totalSteps,
-    {
-      ...maps,
-      // Group itself is never alreadyRan via runBeforeAskUpfront
-      alreadyRan: new Set(),
-    },
-    { nestedUnderGroup: true },
+    maps,
   );
 }
 
@@ -587,18 +633,7 @@ async function runLeafStep(
   topIndex: number,
   totalSteps: number,
   maps: Omit<PipelineMaps, "selectedSubSteps">,
-  opts?: { nestedUnderGroup?: boolean },
 ): Promise<void> {
-  if (!opts?.nestedUnderGroup && maps.alreadyRan.has(topIndex)) {
-    p.log.info(`Already ran (runBeforeAskUpfront): ${formatStepLabel(step)}`);
-    return;
-  }
-
-  if (!opts?.nestedUnderGroup && maps.skipped.has(topIndex)) {
-    p.log.info(`Skipped (declined earlier): ${formatStepLabel(step)}`);
-    return;
-  }
-
   if (step.type === "create-pr") {
     await runCreatePrWithResolve(
       client,
@@ -617,7 +652,7 @@ async function runLeafStep(
     if (!maps.askUpfrontInputs.has(key)) {
       const ok = await confirmRunWorkflowStep(step, topIndex, totalSteps);
       if (!ok) {
-        p.log.info(`Skipped: ${formatStepLabel(step)}`);
+        p.log.info(formatStepBlock("Skipped: ", step));
         return;
       }
     }
@@ -672,7 +707,7 @@ async function runCreatePrWithResolve(
         totalSteps,
       );
       if (result.action === "skip") {
-        p.log.info(`Skipped: ${formatStepLabel(step, source)}`);
+        p.log.info(formatStepBlock("Skipped: ", step, source));
         return;
       }
       source = result.sourceBranch;

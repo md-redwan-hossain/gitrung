@@ -1,12 +1,16 @@
-import { ZodError, type z } from "zod";
+import { z, ZodError } from "zod";
 import {
-  extractWorkflowRuns,
-  normalizeRef,
-  normalizeWorkflowRun,
+  branchExistsFromGet,
+  collectWorkflowRunsFromPaths,
+  decodeBase64ContentFile,
+  findOpenPullRequestInList,
+  hostRequest,
+  hostRequestParsed,
+  listPullRequestsPaged,
   runMatchesWorkflow,
-  runSortMs,
   workflowsDirFor,
   type GitHostClient,
+  type HostRequestConfig,
   type PullRequest,
   type WorkflowRun,
 } from "./git-host.ts";
@@ -15,7 +19,6 @@ import {
   CompareResultSchema,
   ContentFileSchema,
   EnableAutoMergeDataSchema,
-  formatZodError,
   GraphqlEnvelopeSchema,
   PullRequestListSchema,
   PullRequestSchema,
@@ -26,11 +29,24 @@ import {
 
 export class GitHubClient implements GitHostClient {
   readonly workflowsDir = workflowsDirFor("github");
+  private readonly http: HostRequestConfig;
+  private readonly token: string;
 
   constructor(
     private readonly parsed: ParsedRepo,
-    private readonly token: string,
-  ) {}
+    token: string,
+  ) {
+    this.token = token;
+    this.http = {
+      apiBase: parsed.apiBase,
+      label: "GitHub",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    };
+  }
 
   get owner(): string {
     return this.parsed.owner;
@@ -50,7 +66,8 @@ export class GitHubClient implements GitHostClient {
     title: string;
     body?: string;
   }): Promise<PullRequest> {
-    return this.requestParsed(
+    return hostRequestParsed(
+      this.http,
       "POST",
       `/repos/${this.owner}/${this.repo}/pulls`,
       PullRequestSchema,
@@ -64,7 +81,8 @@ export class GitHubClient implements GitHostClient {
   }
 
   async getPullRequest(index: number): Promise<PullRequest> {
-    return this.requestParsed(
+    return hostRequestParsed(
+      this.http,
       "GET",
       `/repos/${this.owner}/${this.repo}/pulls/${index}`,
       PullRequestSchema,
@@ -72,27 +90,15 @@ export class GitHubClient implements GitHostClient {
   }
 
   async listPullRequests(state: PrStatus): Promise<PullRequest[]> {
-    const perPage = 50;
-    const maxPages = 2;
-    const all: PullRequest[] = [];
     const ghState = state === "all" ? "all" : state;
-
-    for (let page = 1; page <= maxPages; page++) {
-      const batch = await this.requestParsed(
+    return listPullRequestsPaged((page, perPage) =>
+      hostRequestParsed(
+        this.http,
         "GET",
         `/repos/${this.owner}/${this.repo}/pulls?state=${encodeURIComponent(ghState)}&page=${page}&per_page=${perPage}`,
         PullRequestListSchema,
-      );
-      if (batch.length === 0) {
-        break;
-      }
-      all.push(...batch);
-      if (batch.length < perPage) {
-        break;
-      }
-    }
-
-    return all;
+      ),
+    );
   }
 
   async findOpenPullRequest(
@@ -100,11 +106,7 @@ export class GitHubClient implements GitHostClient {
     base: string,
   ): Promise<PullRequest | undefined> {
     const open = await this.listPullRequests("open");
-    return open.find(
-      (pr) =>
-        normalizeRef(pr.head?.ref) === normalizeRef(head) &&
-        normalizeRef(pr.base?.ref) === normalizeRef(base),
-    );
+    return findOpenPullRequestInList(open, head, base);
   }
 
   async compare(
@@ -112,7 +114,7 @@ export class GitHubClient implements GitHostClient {
     head: string,
   ): Promise<{ total_commits: number }> {
     const path = `/repos/${this.owner}/${this.repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`;
-    const data = await this.requestParsed("GET", path, CompareResultSchema);
+    const data = await hostRequestParsed(this.http, "GET", path, CompareResultSchema);
 
     if (typeof data.ahead_by === "number") {
       return { total_commits: data.ahead_by };
@@ -135,7 +137,8 @@ export class GitHubClient implements GitHostClient {
       return;
     }
 
-    await this.request(
+    await hostRequest(
+      this.http,
       "PUT",
       `/repos/${this.owner}/${this.repo}/pulls/${index}/merge`,
       { merge_method: "merge" },
@@ -143,7 +146,8 @@ export class GitHubClient implements GitHostClient {
   }
 
   async getCommitStatus(sha: string): Promise<CommitStatus> {
-    return this.requestParsed(
+    return hostRequestParsed(
+      this.http,
       "GET",
       `/repos/${this.owner}/${this.repo}/commits/${encodeURIComponent(sha)}/status`,
       CommitStatusSchema,
@@ -155,33 +159,23 @@ export class GitHubClient implements GitHostClient {
       .split("/")
       .map(encodeURIComponent)
       .join("/");
-    const file = await this.requestParsed(
+    const file = await hostRequestParsed(
+      this.http,
       "GET",
       `/repos/${this.owner}/${this.repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
       ContentFileSchema,
     );
-
-    if (file.encoding !== "base64") {
-      throw new Error(`Unexpected content encoding: ${file.encoding}`);
-    }
-
-    return Buffer.from(file.content.replace(/\n/g, ""), "base64").toString(
-      "utf8",
-    );
+    return decodeBase64ContentFile(file);
   }
 
   async branchExists(name: string): Promise<boolean> {
-    try {
-      await this.request(
+    return branchExistsFromGet(() =>
+      hostRequest(
+        this.http,
         "GET",
         `/repos/${this.owner}/${this.repo}/branches/${encodeURIComponent(name)}`,
-      );
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.includes("→ 404")) return false;
-      throw err;
-    }
+      ),
+    );
   }
 
   async dispatchWorkflow(
@@ -190,7 +184,8 @@ export class GitHubClient implements GitHostClient {
     inputs: Record<string, string>,
   ): Promise<void> {
     const workflowId = encodeURIComponent(workflow);
-    await this.request(
+    await hostRequest(
+      this.http,
       "POST",
       `/repos/${this.owner}/${this.repo}/actions/workflows/${workflowId}/dispatches`,
       {
@@ -210,41 +205,13 @@ export class GitHubClient implements GitHostClient {
       `/repos/${this.owner}/${this.repo}/actions/runs?per_page=${limit}`,
     ];
 
-    const byId = new Map<number, WorkflowRun>();
-    let lastError: unknown;
-    let anyOk = false;
-
-    for (const [i, path] of paths.entries()) {
-      try {
-        const data = await this.request("GET", path);
-        const rawRuns = extractWorkflowRuns(data);
-        for (const raw of rawRuns) {
-          const run = normalizeWorkflowRun(raw);
-          if (!run) continue;
-          if (i > 0 && !runMatchesWorkflow(raw, workflowFile)) {
-            continue;
-          }
-          byId.set(run.id, run);
-        }
-        anyOk = true;
-      } catch (err) {
-        lastError = err;
-        const message = err instanceof Error ? err.message : String(err);
-        if (!message.includes("→ 404")) {
-          throw err;
-        }
-      }
-    }
-
-    if (!anyOk && byId.size === 0) {
-      throw lastError instanceof Error
-        ? lastError
-        : new Error(`Failed to list runs for ${workflowFile}`);
-    }
-
-    return [...byId.values()].sort(
-      (a, b) => (runSortMs(b) ?? 0) - (runSortMs(a) ?? 0),
-    );
+    return collectWorkflowRunsFromPaths({
+      paths,
+      workflowFile,
+      request: (path) => hostRequest(this.http, "GET", path),
+      includeRaw: (i, _path, raw) =>
+        i === 0 || runMatchesWorkflow(raw, workflowFile),
+    });
   }
 
   private async enableAutoMerge(prNumber: number): Promise<void> {
@@ -327,7 +294,7 @@ export class GitHubClient implements GitHostClient {
     } catch (err) {
       if (err instanceof ZodError) {
         throw new Error(
-          `Invalid GitHub GraphQL envelope:\n${formatZodError(err)}`,
+          `Invalid GitHub GraphQL envelope:\n${z.prettifyError(err)}`,
         );
       }
       throw err;
@@ -344,76 +311,10 @@ export class GitHubClient implements GitHostClient {
     } catch (err) {
       if (err instanceof ZodError) {
         throw new Error(
-          `Invalid GitHub GraphQL data:\n${formatZodError(err)}`,
+          `Invalid GitHub GraphQL data:\n${z.prettifyError(err)}`,
         );
       }
       throw err;
     }
-  }
-
-  private async requestParsed<S extends z.ZodType>(
-    method: string,
-    path: string,
-    schema: S,
-    body?: unknown,
-  ): Promise<z.infer<S>> {
-    const data = await this.request(method, path, body);
-    try {
-      return schema.parse(data);
-    } catch (err) {
-      if (err instanceof ZodError) {
-        throw new Error(
-          `Invalid GitHub response ${method} ${path}:\n${formatZodError(err)}`,
-        );
-      }
-      throw err;
-    }
-  }
-
-  private async request(
-    method: string,
-    path: string,
-    body?: unknown,
-  ): Promise<unknown> {
-    const url = `${this.parsed.apiBase}${path}`;
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    };
-
-    const init: RequestInit = { method, headers };
-    if (body !== undefined) {
-      headers["Content-Type"] = "application/json";
-      init.body = JSON.stringify(body);
-    }
-
-    const res = await fetch(url, init);
-    if (res.status === 204) {
-      return undefined;
-    }
-
-    const text = await res.text();
-    let data: unknown = undefined;
-    if (text) {
-      try {
-        data = JSON.parse(text);
-      } catch {
-        data = text;
-      }
-    }
-
-    if (!res.ok) {
-      const message =
-        typeof data === "object" &&
-        data !== null &&
-        "message" in data &&
-        typeof (data as { message: unknown }).message === "string"
-          ? (data as { message: string }).message
-          : text || res.statusText;
-      throw new Error(`GitHub ${method} ${path} → ${res.status}: ${message}`);
-    }
-
-    return data;
   }
 }

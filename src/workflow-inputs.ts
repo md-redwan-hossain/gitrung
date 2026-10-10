@@ -1,7 +1,6 @@
 import * as p from "@clack/prompts";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import {
-  formatZodError,
   WorkflowDocSchema,
   type WorkflowInputValues,
   type YamlInput,
@@ -23,7 +22,7 @@ export function parseWorkflowDispatchInputs(
     doc = WorkflowDocSchema.parse(raw);
   } catch (err) {
     if (err instanceof ZodError) {
-      throw new Error(`Invalid workflow YAML:\n${formatZodError(err)}`);
+      throw new Error(`Invalid workflow YAML:\n${z.prettifyError(err)}`);
     }
     throw err;
   }
@@ -106,22 +105,6 @@ export async function promptSingleWorkflowInput(
   });
   exitIfCancel(answer);
   return answer;
-}
-
-export function defaultsFromYaml(
-  inputDefs: Record<string, YamlInput>,
-): WorkflowInputValues {
-  const values: WorkflowInputValues = {};
-  for (const [name, def] of Object.entries(inputDefs)) {
-    if (def.default !== undefined) {
-      values[name] = def.default;
-    } else if (def.type === "boolean") {
-      values[name] = false;
-    } else if (def.type === "choice" && def.options?.[0]) {
-      values[name] = def.options[0];
-    }
-  }
-  return values;
 }
 
 function toBoolean(value: unknown, fallback: boolean): boolean {
