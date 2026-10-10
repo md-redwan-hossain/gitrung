@@ -26,7 +26,6 @@ import {
 import {
   collectAskUpfrontWorkflowInputs,
   runWorkflowStep,
-  validateRunWorkflowRemote,
 } from "./steps/run-workflow.ts";
 import { cleanupStaleUpgradeArtifacts, runUpgrade } from "./upgrade.ts";
 import {
@@ -109,6 +108,7 @@ async function runPipeline(opts: {
     sourceBranches,
     selectedSubSteps,
     mergePrNumbers,
+    shownHeaders,
   } = await runAskUpfrontPhase(client, repo.label, repo.steps);
 
   for (const [index, step] of repo.steps.entries()) {
@@ -128,19 +128,22 @@ async function runPipeline(opts: {
           sourceBranches,
           selectedSubSteps,
           mergePrNumbers,
+          shownHeaders,
         },
       );
       continue;
     }
 
-    p.log.step(
-      formatStepLine(
-        index,
-        repo.steps.length,
-        step,
-        sourceBranches.get(stepKey(index)),
-      ),
-    );
+    if (!shownHeaders.has(index)) {
+      p.log.step(
+        formatStepLine(
+          index,
+          repo.steps.length,
+          step,
+          sourceBranches.get(stepKey(index)),
+        ),
+      );
+    }
     await runLeafStep(
       client,
       repo.label,
@@ -153,6 +156,7 @@ async function runPipeline(opts: {
         skipped,
         sourceBranches,
         mergePrNumbers,
+        shownHeaders,
       },
     );
   }
@@ -166,6 +170,7 @@ type PipelineMaps = {
   sourceBranches: SourceBranchMap;
   selectedSubSteps: SelectedSubStepMap;
   mergePrNumbers: MergePrNumberMap;
+  shownHeaders: Set<number>;
 };
 
 /** list-pr steps with runBeforeAskUpfront run before ask-upfront prompts; indices skipped in the main loop. */
@@ -197,6 +202,7 @@ type AskUpfrontMaps = {
   skipped: SkippedStepSet;
   sourceBranches: SourceBranchMap;
   mergePrNumbers: MergePrNumberMap;
+  shownHeaders: Set<number>;
 };
 
 /** Ask-upfront group → selected child; non-askUpfront group → null; top-level leaf → itself. */
@@ -237,6 +243,8 @@ async function runAskUpfrontLeaf(
   if (leaf.type === "create-pr") {
     if (!leaf.askUpfront || !leaf.confirmBeforeRun) return;
     const initial = await resolveSourceBranch(label, leaf);
+    p.log.step(formatStepLine(index, totalSteps, leaf, initial));
+    maps.shownHeaders.add(index);
     const result = await confirmCreatePrStep(
       leaf.destinationBranch,
       initial,
@@ -246,13 +254,7 @@ async function runAskUpfrontLeaf(
     );
     if (result.action === "skip") {
       maps.skipped.add(index);
-      p.log.info(
-        formatStepBlock(
-          `Will skip step ${index + 1}: `,
-          leaf,
-          initial,
-        ),
-      );
+      p.log.info(`Will skip step ${index + 1}: ${chalk.green(leaf.type)}`);
       return;
     }
 
@@ -279,13 +281,14 @@ async function runAskUpfrontLeaf(
 
   if (leaf.type === "run-workflow") {
     if (!leaf.askUpfront || !leaf.confirmBeforeRun) return;
+    p.log.step(formatStepLine(index, totalSteps, leaf));
+    maps.shownHeaders.add(index);
     const ok = await confirmRunWorkflowStep(leaf, index, totalSteps);
     if (!ok) {
       maps.skipped.add(index);
-      p.log.info(formatStepBlock(`Will skip step ${index + 1}: `, leaf));
+      p.log.info(`Will skip step ${index + 1}: ${chalk.green(leaf.type)}`);
       return;
     }
-    await validateRunWorkflowRemote(client, leaf);
     return;
   }
 
@@ -317,15 +320,18 @@ async function runAskUpfrontPhase(
   sourceBranches: SourceBranchMap;
   selectedSubSteps: SelectedSubStepMap;
   mergePrNumbers: MergePrNumberMap;
+  shownHeaders: Set<number>;
 }> {
   const skipped: SkippedStepSet = new Set();
   const sourceBranches: SourceBranchMap = new Map();
   const selectedSubSteps: SelectedSubStepMap = new Map();
   const mergePrNumbers: MergePrNumberMap = new Map();
+  const shownHeaders = new Set<number>();
   const maps: AskUpfrontMaps = {
     skipped,
     sourceBranches,
     mergePrNumbers,
+    shownHeaders,
   };
 
   // Ask-upfront groups: pick child first
@@ -370,6 +376,7 @@ async function runAskUpfrontPhase(
       sourceBranches,
       selectedSubSteps,
       mergePrNumbers,
+      shownHeaders,
     };
   }
 
@@ -387,6 +394,7 @@ async function runAskUpfrontPhase(
     sourceBranches,
     selectedSubSteps,
     mergePrNumbers,
+    shownHeaders,
   };
 }
 
@@ -605,14 +613,16 @@ async function runGroupStep(
 
   const child = group.items[subIndex]!;
   const key = stepKey(groupIndex, subIndex);
-  p.log.step(
-    formatStepLine(
-      groupIndex,
-      totalSteps,
-      child,
-      maps.sourceBranches.get(key),
-    ),
-  );
+  if (!maps.shownHeaders.has(groupIndex)) {
+    p.log.step(
+      formatStepLine(
+        groupIndex,
+        totalSteps,
+        child,
+        maps.sourceBranches.get(key),
+      ),
+    );
+  }
 
   await runLeafStep(
     client,

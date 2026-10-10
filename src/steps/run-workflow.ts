@@ -72,11 +72,13 @@ export async function runWorkflowStep(
 
   if (precollected !== undefined) {
     sets = precollected;
-    p.log.info(
-      sets.length === 0 || Object.keys(sets[0] ?? {}).length === 0
-        ? `Using ask-upfront inputs for ${step.workflow} (none).`
-        : `Using ask-upfront inputs for ${step.workflow} (${sets.length} set(s)):\n${formatInputSetsSummary(sets)}`,
-    );
+    const hasInputs =
+      sets.length > 0 && Object.keys(sets[0] ?? {}).length > 0;
+    if (hasInputs) {
+      p.log.info(
+        `Using ask-upfront inputs for ${step.workflow} (${sets.length} set(s)):\n${formatInputSetsSummary(sets)}`,
+      );
+    }
   } else {
     await validateRunWorkflowRemote(client, step);
     sets = await collectWorkflowInputSets(client, label, step);
