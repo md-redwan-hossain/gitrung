@@ -68,6 +68,10 @@ function waitDetailPrefix(detail: string | undefined): string {
   return detail ? `${detail}, ` : "";
 }
 
+function runUrlSuffix(run: WorkflowRun): string {
+  return run.html_url ? ` ${run.html_url}` : "";
+}
+
 async function waitForWorkflowRunSuccess(
   client: GitHostClient,
   workflowFile: string,
@@ -106,13 +110,13 @@ async function waitForWorkflowRunSuccess(
 
       const outcome = classifyRun(candidate);
       if (outcome === "pending") {
-        spinner.text = `Waiting for ${workflowFile} (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)})…`;
+        spinner.text = `Waiting for ${workflowFile} (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)}${runUrlSuffix(candidate)})…`;
         await sleep(POLL_MS);
         continue;
       }
       if (outcome === "failed") {
         spinner.fail(
-          `${workflowFile} failed (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)}${candidate.html_url ? `: ${candidate.html_url}` : ""})`,
+          `${workflowFile} failed (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)}${runUrlSuffix(candidate)})`,
         );
         throw new Error(
           `Workflow ${workflowFile} ended with status=${candidate.status} conclusion=${candidate.conclusion}`,
@@ -120,7 +124,7 @@ async function waitForWorkflowRunSuccess(
       }
 
       spinner.succeedSuccess(
-        `${workflowFile} succeeded (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)})`,
+        `${workflowFile} succeeded (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)}${runUrlSuffix(candidate)})`,
       );
       return candidate.id;
     }
