@@ -60,13 +60,13 @@ steps:
 
 ## Start here
 
-1. Download the binary for your platform from the [releases page](https://github.com/md-redwan-hossain/gitrung/releases).
-2. Create a folder and place the binary inside it. Create `configs` and `.env` alongside the binary:
+1. Download the `.zip` for your platform from the [releases page](https://github.com/md-redwan-hossain/gitrung/releases) (for example `gitrung-windows-x64.zip` or `gitrung-linux-x64.zip`) and extract the binary.
+2. Create a folder and place the extracted binary inside it. Create `configs` and `.env` alongside the binary:
 
 ```text
 gitrung/
-├── gitrung                 # macOS/Linux binary
-├── gitrung.exe             # Windows binary
+├── gitrung                 # macOS/Linux binary (from the zip)
+├── gitrung.exe             # Windows binary (from the zip; rename if needed)
 ├── .env
 └── configs/
     └── storefront.yaml

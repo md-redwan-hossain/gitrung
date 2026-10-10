@@ -1,5 +1,6 @@
 import * as p from "@clack/prompts";
 import chalk from "chalk";
+import { unzipSync } from "fflate";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -18,6 +19,7 @@ const RELEASE_BASE =
   "https://github.com/md-redwan-hossain/gitrung/releases/download/latest";
 
 type PlatformAsset = {
+  archive: string;
   binary: string;
   checksum: string;
 };
@@ -25,24 +27,28 @@ type PlatformAsset = {
 function resolvePlatformAsset(): PlatformAsset {
   if (process.platform === "win32" && process.arch === "x64") {
     return {
+      archive: "gitrung-windows-x64.zip",
       binary: "gitrung-windows-x64.exe",
-      checksum: "gitrung-windows-x64.exe.sha256",
+      checksum: "gitrung-windows-x64.sha256",
     };
   }
   if (process.platform === "linux" && process.arch === "x64") {
     return {
+      archive: "gitrung-linux-x64.zip",
       binary: "gitrung-linux-x64",
       checksum: "gitrung-linux-x64.sha256",
     };
   }
   if (process.platform === "darwin" && process.arch === "arm64") {
     return {
+      archive: "gitrung-darwin-arm64.zip",
       binary: "gitrung-darwin-arm64",
       checksum: "gitrung-darwin-arm64.sha256",
     };
   }
   if (process.platform === "darwin" && process.arch === "x64") {
     return {
+      archive: "gitrung-darwin-x64.zip",
       binary: "gitrung-darwin-x64",
       checksum: "gitrung-darwin-x64.sha256",
     };
@@ -150,6 +156,20 @@ function parseChecksum(data: Uint8Array, expectedAsset: string): string {
     throw new Error(`Checksum file is malformed for ${expectedAsset}.`);
   }
   return match[1]!.toLowerCase();
+}
+
+function extractBinaryFromZip(
+  zipBytes: Uint8Array,
+  binaryName: string,
+): Uint8Array {
+  const files = unzipSync(zipBytes);
+  const direct = files[binaryName];
+  if (direct) return direct;
+
+  const key = Object.keys(files).find((k) => basename(k) === binaryName);
+  if (key && files[key]) return files[key]!;
+
+  throw new Error(`Zip archive does not contain ${binaryName}.`);
 }
 
 function currentExecutable(): string {
@@ -292,10 +312,11 @@ export async function runUpgrade(): Promise<void> {
       return;
     }
 
-    const replacementBytes = await download(
-      `${RELEASE_BASE}/${encodeURIComponent(asset.binary)}`,
-      { progressFilename: asset.binary },
+    const zipBytes = await download(
+      `${RELEASE_BASE}/${encodeURIComponent(asset.archive)}`,
+      { progressFilename: asset.archive },
     );
+    const replacementBytes = extractBinaryFromZip(zipBytes, asset.binary);
     if (sha256(replacementBytes) !== expectedHash) {
       throw new Error("Downloaded binary failed checksum verification.");
     }

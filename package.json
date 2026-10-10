@@ -9,7 +9,7 @@
   "scripts": {
     "start": "bun src/index.ts",
     "doctor": "bun src/index.ts doctor",
-    "compile": "bun build ./src/index.ts --compile --outfile gitrung --target=bun",
+    "compile": "bun build ./src/index.ts --compile --minify --outfile gitrung --target=bun",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -17,6 +17,7 @@
     "chalk": "^6.0.1",
     "cli-table3": "^0.6.5",
     "commander": "^15.0.0",
+    "fflate": "^0.8.3",
     "log-symbols": "^7.0.1",
     "ora": "^9.4.1",
     "zod": "^4"

@@ -27,12 +27,17 @@ jobs:
       - name: Build binaries
         run: |
           mkdir -p dist
-          bun build ./src/index.ts --compile --outfile dist/gitrung-windows-x64.exe --target=bun-windows-x64
-          bun build ./src/index.ts --compile --outfile dist/gitrung-linux-x64 --target=bun-linux-x64
-          bun build ./src/index.ts --compile --outfile dist/gitrung-darwin-arm64 --target=bun-darwin-arm64
-          bun build ./src/index.ts --compile --outfile dist/gitrung-darwin-x64 --target=bun-darwin-x64
-          for file in dist/gitrung-*; do
-            sha256sum "$file" > "$file.sha256"
+          bun build ./src/index.ts --compile --minify --outfile dist/gitrung-windows-x64.exe --target=bun-windows-x64
+          bun build ./src/index.ts --compile --minify --outfile dist/gitrung-linux-x64 --target=bun-linux-x64
+          bun build ./src/index.ts --compile --minify --outfile dist/gitrung-darwin-arm64 --target=bun-darwin-arm64
+          bun build ./src/index.ts --compile --minify --outfile dist/gitrung-darwin-x64 --target=bun-darwin-x64
+
+          cd dist
+          for binary in gitrung-windows-x64.exe gitrung-linux-x64 gitrung-darwin-arm64 gitrung-darwin-x64; do
+            stem="${binary%.exe}"
+            sha256sum "$binary" > "${stem}.sha256"
+            zip -j "${stem}.zip" "$binary"
+            rm "$binary"
           done
 
       - name: Publish latest release
@@ -44,3 +49,4 @@ jobs:
           make_latest: true
           body: |
             Rolling build. Assets are replaced each time this workflow is run.
+            Download the `.zip` for your platform, extract the binary, then run it.
