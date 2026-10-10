@@ -1,6 +1,7 @@
 import * as p from "@clack/prompts";
 import {
   formatInputSetsSummary,
+  formatInputsInline,
   formatInputsSummary,
   getLatestWorkflowInputBatch,
   getLatestWorkflowInputs,
@@ -86,12 +87,17 @@ export async function runWorkflowStep(
 
   try {
     for (const [index, inputs] of sets.entries()) {
+      const inline =
+        sets.length > 1 ? formatInputsInline(inputs) : "";
+      const detail = inline || undefined;
       if (sets.length > 1) {
         p.log.step(
-          `Dispatch ${index + 1}/${sets.length}: ${step.workflow}`,
+          detail
+            ? `Dispatch ${index + 1}/${sets.length}: ${step.workflow} (${detail})`
+            : `Dispatch ${index + 1}/${sets.length}: ${step.workflow}`,
         );
       }
-      await dispatchOne(client, step, inputs, claimedRunIds);
+      await dispatchOne(client, step, inputs, claimedRunIds, detail);
     }
   } catch (err) {
     if (!step.exitOnError) {
@@ -124,10 +130,12 @@ async function dispatchOne(
   step: RunWorkflowStep,
   inputs: WorkflowInputValues,
   claimedRunIds: Set<number>,
+  detail?: string,
 ): Promise<void> {
   const dispatchedAt = new Date();
+  const detailSuffix = detail ? ` (${detail})` : "";
   const dispatchSpinner = createSpinner(
-    `Dispatching ${step.workflow} on ${step.useWorkflowFromBranch}`,
+    `Dispatching ${step.workflow} on ${step.useWorkflowFromBranch}${detailSuffix}`,
   ).start();
 
   try {
@@ -136,9 +144,9 @@ async function dispatchOne(
       step.useWorkflowFromBranch,
       toDispatchInputs(inputs),
     );
-    dispatchSpinner.succeedSuccess(`Dispatched ${step.workflow}`);
+    dispatchSpinner.succeedSuccess(`Dispatched ${step.workflow}${detailSuffix}`);
   } catch (err) {
-    dispatchSpinner.fail(`Failed to dispatch ${step.workflow}`);
+    dispatchSpinner.fail(`Failed to dispatch ${step.workflow}${detailSuffix}`);
     throw err;
   }
 
@@ -148,7 +156,7 @@ async function dispatchOne(
       step.workflow,
       step.useWorkflowFromBranch,
       dispatchedAt,
-      { excludeIds: claimedRunIds },
+      { excludeIds: claimedRunIds, detail },
     );
     claimedRunIds.add(runId);
   }

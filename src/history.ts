@@ -185,6 +185,13 @@ export function formatInputsSummary(inputs: WorkflowInputValues): string {
     .join("\n");
 }
 
+/** Compact one-line label for spinners / step logs (e.g. `client=CLIENT_DC`). */
+export function formatInputsInline(inputs: WorkflowInputValues): string {
+  return Object.entries(inputs)
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(", ");
+}
+
 export function formatInputSetsSummary(sets: WorkflowInputValues[]): string {
   return sets
     .map((inputs, i) => `#${i + 1}\n${formatInputsSummary(inputs)}`)
