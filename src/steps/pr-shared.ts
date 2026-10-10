@@ -55,12 +55,17 @@ export async function waitForDispatchedWorkflowSuccess(
   workflowFile: string,
   ref: string,
   dispatchedAt: Date,
-  opts?: { excludeIds?: ReadonlySet<number>; detail?: string },
+  opts?: {
+    excludeIds?: ReadonlySet<number>;
+    detail?: string;
+    onRunFound?: (run: WorkflowRun) => void;
+  },
 ): Promise<number> {
   return waitForWorkflowRunSuccess(client, workflowFile, ref, {
     earliestMs: dispatchedAt.getTime() - MERGE_SKEW_MS,
     excludeIds: opts?.excludeIds,
     detail: opts?.detail,
+    onRunFound: opts?.onRunFound,
   });
 }
 
@@ -80,14 +85,14 @@ async function waitForWorkflowRunSuccess(
     earliestMs: number;
     excludeIds?: ReadonlySet<number>;
     detail?: string;
+    onRunFound?: (run: WorkflowRun) => void;
   },
 ): Promise<number> {
   const detailSuffix = opts.detail ? ` (${opts.detail})` : "";
-  const spinner = createSpinner(
-    `Waiting for ${workflowFile}${detailSuffix}…`,
-  ).start();
   const deadline = Date.now() + TIMEOUT_MS;
   let pinnedId: number | undefined;
+  let spinner: ReturnType<typeof createSpinner> | undefined;
+  let announced = false;
 
   try {
     while (Date.now() < deadline) {
@@ -103,19 +108,26 @@ async function waitForWorkflowRunSuccess(
       }
 
       if (!candidate) {
-        // Keep the same spinner text; do not dump listed-run diagnostics.
         await sleep(POLL_MS);
         continue;
       }
 
+      if (!announced) {
+        announced = true;
+        opts.onRunFound?.(candidate);
+        spinner = createSpinner(
+          `Waiting for ${workflowFile}${detailSuffix}…`,
+        ).start();
+      }
+
       const outcome = classifyRun(candidate);
       if (outcome === "pending") {
-        spinner.text = `Waiting for ${workflowFile} (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)}${runUrlSuffix(candidate)})…`;
+        spinner!.text = `Waiting for ${workflowFile} (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)})…`;
         await sleep(POLL_MS);
         continue;
       }
       if (outcome === "failed") {
-        spinner.fail(
+        spinner!.fail(
           `${workflowFile} failed (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)}${runUrlSuffix(candidate)})`,
         );
         throw new Error(
@@ -123,18 +135,20 @@ async function waitForWorkflowRunSuccess(
         );
       }
 
-      spinner.succeedSuccess(
-        `${workflowFile} succeeded (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)}${runUrlSuffix(candidate)})`,
+      spinner!.succeedSuccess(
+        `${workflowFile} succeeded (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)})`,
       );
       return candidate.id;
     }
 
-    spinner.fail(`Timed out waiting for ${workflowFile}${detailSuffix}`);
+    if (spinner) {
+      spinner.fail(`Timed out waiting for ${workflowFile}${detailSuffix}`);
+    }
     throw new Error(
       `${workflowFile} did not succeed within ${TIMEOUT_MS / 60_000} minutes`,
     );
   } catch (err) {
-    if (spinner.isSpinning) {
+    if (spinner?.isSpinning) {
       spinner.fail(`Failed waiting for ${workflowFile}${detailSuffix}`);
     }
     throw err;

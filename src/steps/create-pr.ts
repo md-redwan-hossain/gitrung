@@ -49,9 +49,8 @@ export async function runCreatePrStep(
     step.destinationBranch,
   );
   if (existing) {
-    p.log.warn(
-      `Open PR already exists: #${existing.number} ${existing.html_url}`,
-    );
+    p.log.warn(`Open PR already exists: #${existing.number}`);
+    if (existing.html_url) p.log.info(`URL: ${existing.html_url}`);
     p.cancel("Skipped create-pr (PR already exists).");
     process.exit(0);
   }
@@ -91,7 +90,8 @@ export async function runCreatePrStep(
       title,
       body,
     });
-    createPrSpinner.succeedInfo(`PR #${pr.number} created: ${pr.html_url}`);
+    createPrSpinner.succeedInfo(`PR #${pr.number} created`);
+    if (pr.html_url) p.log.info(`URL: ${pr.html_url}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (isDuplicatePrError(message)) {

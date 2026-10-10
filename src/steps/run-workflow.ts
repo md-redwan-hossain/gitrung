@@ -158,7 +158,13 @@ async function dispatchOne(
       step.workflow,
       step.useWorkflowFromBranch,
       dispatchedAt,
-      { excludeIds: claimedRunIds, detail },
+      {
+        excludeIds: claimedRunIds,
+        detail,
+        onRunFound: (run) => {
+          if (run.html_url) p.log.info(`URL: ${run.html_url}`);
+        },
+      },
     );
     claimedRunIds.add(runId);
   }
