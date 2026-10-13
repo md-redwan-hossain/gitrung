@@ -481,9 +481,7 @@ async function pickRepo(
       hint: r.url,
     })),
     filter: (search, option) =>
-      (option.label ?? String(option.value))
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+      String(option.value).toLowerCase().includes(search.toLowerCase()),
   });
 
   if (p.isCancel(selected)) {
