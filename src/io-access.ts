@@ -52,9 +52,7 @@ export function checkIoAccess(configDir?: string): IoCheckResult {
     errors.push(`Project directory not writable (needed for metadata.jsonc): ${root}`);
   }
 
-  if (isBunRuntime()) {
-    warnings.push("Self-upgrade write check skipped (running under Bun, not a compiled binary)");
-  } else {
+  if (!isBunRuntime()) {
     const upgradeError = checkUpgradeWriteAccess();
     if (upgradeError) errors.push(upgradeError);
   }

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z, ZodError } from "zod";
+import { formatCliTable, formatKeyValueTable } from "./format-table.ts";
 import { projectRoot } from "./load-config.ts";
 import {
   HistoryFileSchema,
@@ -179,9 +180,12 @@ function shallowEqual(
 }
 
 export function formatInputsSummary(inputs: WorkflowInputValues): string {
-  return Object.entries(inputs)
-    .map(([k, v]) => `  ${k}: ${String(v)}`)
-    .join("\n");
+  return formatKeyValueTable(
+    Object.entries(inputs).map(([key, value]) => ({
+      key,
+      value: String(value),
+    })),
+  );
 }
 
 /** Compact one-line label for spinners / step logs (e.g. `client=CLIENT_DC`). */
@@ -192,9 +196,17 @@ export function formatInputsInline(inputs: WorkflowInputValues): string {
 }
 
 export function formatInputSetsSummary(sets: WorkflowInputValues[]): string {
-  return sets
-    .map((inputs, i) => `#${i + 1}\n${formatInputsSummary(inputs)}`)
-    .join("\n\n");
+  if (sets.length === 0) return "";
+  if (sets.length === 1) {
+    return formatInputsSummary(sets[0]!);
+  }
+  const rows: string[][] = [];
+  for (const [i, inputs] of sets.entries()) {
+    for (const [key, value] of Object.entries(inputs)) {
+      rows.push([String(i + 1), key, String(value)]);
+    }
+  }
+  return formatCliTable(rows, { head: ["#", "key", "value"] });
 }
 
 export type { WorkflowHistoryEntry };

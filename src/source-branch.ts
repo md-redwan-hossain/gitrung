@@ -1,5 +1,4 @@
 import * as p from "@clack/prompts";
-import chalk from "chalk";
 import {
   getSourceBranch,
   loadHistory,
@@ -81,13 +80,13 @@ export type CreatePrConfirmResult =
 /**
  * Yes / Skip / [Use from history] / Change source branch.
  * History option appears when a saved source differs from the current (config) value.
+ * Call reprint after a source change so the step header/table stay current.
  */
 export async function confirmCreatePrStep(
   destinationBranch: string,
   sourceBranch: string,
   label: string,
-  stepIndex: number,
-  totalSteps: number,
+  opts?: { reprint?: (source: string) => void },
 ): Promise<CreatePrConfirmResult> {
   let current = sourceBranch;
 
@@ -111,7 +110,7 @@ export async function confirmCreatePrStep(
     options.push({ value: "change", label: "Change source branch" });
 
     const choice = await p.select({
-      message: `Run ${chalk.yellow(`[${stepIndex + 1}/${totalSteps}]`)}: create-pr ${current} → ${destinationBranch}?`,
+      message: "Run this step?",
       options,
     });
 
@@ -133,5 +132,6 @@ export async function confirmCreatePrStep(
 
     current = await promptSourceBranch(current);
     persistSourceBranch(label, destinationBranch, current);
+    opts?.reprint?.(current);
   }
 }

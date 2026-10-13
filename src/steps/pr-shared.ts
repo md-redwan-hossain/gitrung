@@ -91,8 +91,10 @@ async function waitForWorkflowRunSuccess(
   const detailSuffix = opts.detail ? ` (${opts.detail})` : "";
   const deadline = Date.now() + TIMEOUT_MS;
   let pinnedId: number | undefined;
-  let spinner: ReturnType<typeof createSpinner> | undefined;
   let announced = false;
+  const spinner = createSpinner(
+    `Waiting for ${workflowFile}${detailSuffix}…`,
+  ).start();
 
   try {
     while (Date.now() < deadline) {
@@ -108,26 +110,26 @@ async function waitForWorkflowRunSuccess(
       }
 
       if (!candidate) {
+        spinner.text = `Looking for ${workflowFile} run${detailSuffix}…`;
         await sleep(POLL_MS);
         continue;
       }
 
       if (!announced) {
         announced = true;
+        spinner.stop();
         opts.onRunFound?.(candidate);
-        spinner = createSpinner(
-          `Waiting for ${workflowFile}${detailSuffix}…`,
-        ).start();
+        spinner.start(`Waiting for ${workflowFile}${detailSuffix}…`);
       }
 
       const outcome = classifyRun(candidate);
       if (outcome === "pending") {
-        spinner!.text = `Waiting for ${workflowFile} (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)})…`;
+        spinner.text = `Waiting for ${workflowFile} (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)})…`;
         await sleep(POLL_MS);
         continue;
       }
       if (outcome === "failed") {
-        spinner!.fail(
+        spinner.fail(
           `${workflowFile} failed (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)}${runUrlSuffix(candidate)})`,
         );
         throw new Error(
@@ -135,20 +137,18 @@ async function waitForWorkflowRunSuccess(
         );
       }
 
-      spinner!.succeedSuccess(
+      spinner.succeedSuccess(
         `${workflowFile} succeeded (${waitDetailPrefix(opts.detail)}run ${formatRunRef(candidate)})`,
       );
       return candidate.id;
     }
 
-    if (spinner) {
-      spinner.fail(`Timed out waiting for ${workflowFile}${detailSuffix}`);
-    }
+    spinner.fail(`Timed out waiting for ${workflowFile}${detailSuffix}`);
     throw new Error(
       `${workflowFile} did not succeed within ${TIMEOUT_MS / 60_000} minutes`,
     );
   } catch (err) {
-    if (spinner?.isSpinning) {
+    if (spinner.isSpinning) {
       spinner.fail(`Failed waiting for ${workflowFile}${detailSuffix}`);
     }
     throw err;

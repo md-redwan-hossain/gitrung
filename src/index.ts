@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 import * as p from "@clack/prompts";
 import chalk from "chalk";
-import Table from "cli-table3";
 import { Command } from "commander";
 import { createGitClient } from "./create-git-client.ts";
 import { reportHealthResult, runDoctor, runHealthChecks } from "./doctor.ts";
+import { formatKeyValueTable } from "./format-table.ts";
 import type { GitHostClient } from "./git-host.ts";
 import { loadToken } from "./load-config.ts";
 import { parseRepoUrl } from "./parse-repo-url.ts";
@@ -249,12 +249,17 @@ async function runAskUpfrontLeaf(
       leaf.destinationBranch,
       initial,
       label,
-      index,
-      totalSteps,
+      {
+        reprint: (source) => {
+          p.log.step(formatStepLine(index, totalSteps, leaf, source));
+        },
+      },
     );
     if (result.action === "skip") {
       maps.skipped.add(index);
-      p.log.info(`Will skip step ${index + 1}: ${chalk.green(leaf.type)}`);
+      p.log.info(
+        `Will skip step ${index + 1}: ${chalk.green(stepIdentity(leaf, initial))}`,
+      );
       return;
     }
 
@@ -283,10 +288,12 @@ async function runAskUpfrontLeaf(
     if (!leaf.askUpfront || !leaf.confirmBeforeRun) return;
     p.log.step(formatStepLine(index, totalSteps, leaf));
     maps.shownHeaders.add(index);
-    const ok = await confirmRunWorkflowStep(leaf, index, totalSteps);
+    const ok = await confirmRunWorkflowStep();
     if (!ok) {
       maps.skipped.add(index);
-      p.log.info(`Will skip step ${index + 1}: ${chalk.green(leaf.type)}`);
+      p.log.info(
+        `Will skip step ${index + 1}: ${chalk.green(stepIdentity(leaf))}`,
+      );
       return;
     }
     return;
@@ -338,6 +345,11 @@ async function runAskUpfrontPhase(
   for (const [index, step] of steps.entries()) {
     if (!isStepGroup(step) || !step.askUpfront) continue;
     const subIndex = await selectSubStep(step, index, steps.length);
+    if (subIndex === "skip") {
+      skipped.add(index);
+      p.log.info(`Will skip step ${index + 1}: ${chalk.green("one-of")}`);
+      continue;
+    }
     selectedSubSteps.set(index, subIndex);
   }
 
@@ -402,13 +414,16 @@ async function selectSubStep(
   group: StepGroup,
   groupIndex: number,
   totalSteps: number,
-): Promise<number> {
+): Promise<number | "skip"> {
   const selected = await p.select({
     message: `Which one-of item to run for ${chalk.yellow(`[${groupIndex + 1}/${totalSteps}]`)}?`,
-    options: group.items.map((child, i) => ({
-      value: i,
-      label: chalk.green(child.type),
-    })),
+    options: [
+      ...group.items.map((child, i) => ({
+        value: i as number | "skip",
+        label: chalk.green(child.type),
+      })),
+      { value: "skip" as const, label: "Skip" },
+    ],
   });
 
   if (p.isCancel(selected)) {
@@ -419,13 +434,9 @@ async function selectSubStep(
   return selected;
 }
 
-async function confirmRunWorkflowStep(
-  step: RunWorkflowStep,
-  stepIndex: number,
-  totalSteps: number,
-): Promise<boolean> {
+async function confirmRunWorkflowStep(): Promise<boolean> {
   const answer = await p.select({
-    message: `Run ${chalk.yellow(`[${stepIndex + 1}/${totalSteps}]`)}: ${step.workflow} @ ${step.useWorkflowFromBranch}?`,
+    message: "Run this step?",
     options: [
       { value: "yes", label: "Yes" },
       { value: "skip", label: "Skip" },
@@ -461,13 +472,18 @@ async function pickRepo(
     return repos[0]!;
   }
 
-  const selected = await p.select({
+  const selected = await p.autocomplete({
     message: "Select a repo",
+    placeholder: "Type to search…",
     options: repos.map((r) => ({
       value: r.label,
       label: `${r.label} [${r.gitPlatform}]`,
       hint: r.url,
     })),
+    filter: (search, option) =>
+      (option.label ?? String(option.value))
+        .toLowerCase()
+        .includes(search.toLowerCase()),
   });
 
   if (p.isCancel(selected)) {
@@ -480,13 +496,27 @@ async function pickRepo(
 
 type ParamRow = { key: string; value: string };
 
+function stepIdentity(step: LeafStep, resolvedSource?: string): string {
+  if (step.type === "create-pr") {
+    const source = resolvedSource ?? step.sourceBranch ?? "prompt";
+    return `${source} → ${step.destinationBranch}`;
+  }
+  if (step.type === "run-workflow") {
+    return `${step.workflow} @ ${step.useWorkflowFromBranch}`;
+  }
+  if (step.type === "list-pr") {
+    return "list-pr";
+  }
+  return "merge-pr";
+}
+
 function stepParamRows(
   step: LeafStep,
   resolvedSource?: string,
 ): ParamRow[] {
   if (step.type === "create-pr") {
     const source = resolvedSource ?? step.sourceBranch ?? "prompt";
-    return [
+    const rows: ParamRow[] = [
       { key: "source", value: source },
       { key: "destination", value: step.destinationBranch },
       { key: "merge", value: String(step.merge) },
@@ -499,6 +529,9 @@ function stepParamRows(
       { key: "askUpfront", value: String(step.askUpfront) },
       { key: "confirmBeforeRun", value: String(step.confirmBeforeRun) },
     ];
+    if (step.title) rows.push({ key: "title", value: step.title });
+    if (step.body) rows.push({ key: "body", value: step.body });
+    return rows;
   }
   if (step.type === "list-pr") {
     const rows: ParamRow[] = [{ key: "status", value: step.status }];
@@ -540,35 +573,7 @@ function stepParamRows(
 }
 
 function formatParamTable(rows: ParamRow[]): string {
-  if (rows.length === 0) return "";
-  const table = new Table({
-    chars: {
-      top: "═",
-      "top-mid": "╤",
-      "top-left": "╔",
-      "top-right": "╗",
-      bottom: "═",
-      "bottom-mid": "╧",
-      "bottom-left": "╚",
-      "bottom-right": "╝",
-      left: "║",
-      "left-mid": "",
-      mid: "",
-      "mid-mid": "",
-      right: "║",
-      "right-mid": "",
-      middle: "│",
-    },
-    style: { head: [], border: [], "padding-left": 1, "padding-right": 1 },
-  });
-  for (const row of rows) {
-    table.push([row.key, row.value]);
-  }
-  return table
-    .toString()
-    .split("\n")
-    .map((line) => `    ${line}`)
-    .join("\n");
+  return formatKeyValueTable(rows);
 }
 
 function formatStepBlock(
@@ -576,7 +581,7 @@ function formatStepBlock(
   step: LeafStep,
   resolvedSource?: string,
 ): string {
-  const header = `${prefix}${chalk.green(step.type)}`;
+  const header = `${prefix}${chalk.green(stepIdentity(step, resolvedSource))}`;
   const table = formatParamTable(stepParamRows(step, resolvedSource));
   return table ? `${header}\n${table}` : header;
 }
@@ -607,7 +612,13 @@ async function runGroupStep(
 
   let subIndex = maps.selectedSubSteps.get(groupIndex);
   if (subIndex === undefined) {
-    subIndex = await selectSubStep(group, groupIndex, totalSteps);
+    const selected = await selectSubStep(group, groupIndex, totalSteps);
+    if (selected === "skip") {
+      maps.skipped.add(groupIndex);
+      p.log.info(`Skipped: ${chalk.green("one-of")}`);
+      return;
+    }
+    subIndex = selected;
     maps.selectedSubSteps.set(groupIndex, subIndex);
   }
 
@@ -660,7 +671,7 @@ async function runLeafStep(
   if (step.type === "run-workflow" && step.confirmBeforeRun) {
     // Ask-upfront phase already confirmed when inputs were collected for this key
     if (!maps.askUpfrontInputs.has(key)) {
-      const ok = await confirmRunWorkflowStep(step, topIndex, totalSteps);
+      const ok = await confirmRunWorkflowStep();
       if (!ok) {
         p.log.info(formatStepBlock("Skipped: ", step));
         return;
@@ -713,8 +724,11 @@ async function runCreatePrWithResolve(
         step.destinationBranch,
         source,
         label,
-        stepIndex,
-        totalSteps,
+        {
+          reprint: (next) => {
+            p.log.step(formatStepLine(stepIndex, totalSteps, step, next));
+          },
+        },
       );
       if (result.action === "skip") {
         p.log.info(formatStepBlock("Skipped: ", step, source));
