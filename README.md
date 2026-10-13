@@ -11,7 +11,7 @@ A release often means doing the same tedious sequence by hand:
 5. Wait for the Docker image build again.
 6. Deploy the image to production.
 
-Doing that manually is boring. gitrung makes the release flow declarative, repeatable, and guided.
+ You need to either do all of that or skip some steps on regular basis. Doing that manually is boring. `gitrung` makes the release flow declarative, repeatable, and guided.
 
 | Tool | What it does |
 | --- | --- |
