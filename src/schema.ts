@@ -13,8 +13,6 @@ const CreatePrOptionsShared = {
   destinationBranch: z.string().min(1),
   title: z.string().optional(),
   body: z.string().optional(),
-  askUpfront: z.boolean().default(true),
-  confirmBeforeRun: z.boolean().default(true),
 };
 
 /** merge:true requires afterMerge; merge:false forbids it. */
@@ -45,8 +43,6 @@ export const RunWorkflowWhenSchema = z.object({
 export const RunWorkflowOptionsSchema = z.object({
   workflow: z.string().min(1),
   useWorkflowFromBranch: z.string().min(1),
-  askUpfront: z.boolean().default(true),
-  confirmBeforeRun: z.boolean().default(true),
   waitUntilFinish: z.boolean().default(true),
   exitOnError: z.boolean().default(true),
   when: z.array(RunWorkflowWhenSchema).default([]),
@@ -62,8 +58,6 @@ export const RunWorkflowStepSchema = z
 export const ListPrOptionsSchema = z.object({
   status: PrStatusSchema,
   user: z.string().optional(),
-  /** Run before ask-upfront prompts; skipped in the main step loop. */
-  runBeforeAskUpfront: z.boolean().default(false),
 });
 
 export const ListPrStepSchema = z
@@ -97,20 +91,14 @@ export const LeafStepSchema = z.union([
   MergePrStepSchema,
 ]);
 
-export const OneOfOptionsSchema = z.object({
-  askUpfront: z.boolean().default(true),
-});
-
 /** One-level exclusive choice: steps → items only. */
 export const StepGroupSchema = z
   .object({
     type: z.literal("one-of"),
-    options: OneOfOptionsSchema.default({ askUpfront: true }),
     items: z.array(LeafStepSchema).min(2),
   })
-  .transform(({ type, options, items }) => ({
+  .transform(({ type, items }) => ({
     type,
-    askUpfront: options.askUpfront,
     items,
   }));
 
@@ -298,8 +286,8 @@ export type ParsedRepo = {
   gitPlatform: GitPlatform;
 };
 
-/** Composite step key → ask-upfront workflow input set(s) (length > 1 when when[].repeat) */
-export type AskUpfrontInputMap = Map<string, WorkflowInputValues[]>;
+/** Composite step key → precollected workflow input set(s) (length > 1 when when[].repeat) */
+export type PrecollectedInputMap = Map<string, WorkflowInputValues[]>;
 
 /** First when entry with repeat:true, else undefined. */
 export function repeatActionInputId(step: RunWorkflowStep): string | undefined {
@@ -309,7 +297,7 @@ export function repeatActionInputId(step: RunWorkflowStep): string | undefined {
 /** Composite step key → resolved create-pr source branch for this run */
 export type SourceBranchMap = Map<string, string>;
 
-/** Top-level step indices skipped by confirmBeforeRun (ask-upfront phase) */
+/** Top-level step indices skipped during prepare (confirm Yes/Skip) */
 export type SkippedStepSet = Set<number>;
 
 /** Top-level group index → chosen item index */

@@ -138,14 +138,13 @@ options:
 
 ### `list-pr`
 
-Use it to review pull requests before continuing. It can run before all ask-upfront questions, which makes it useful as the first step.
+Use it to review pull requests. It runs in step order like every other tool (often placed first).
 
 ```yaml
 type: list-pr
 options:
   status: open
   user: alex
-  runBeforeAskUpfront: true
 ```
 
 ```mermaid
@@ -162,7 +161,6 @@ flowchart TD
 | `type` | Yes | Must be `list-pr`. |
 | `options.status` | Yes | PR state: `open`, `closed`, or `all`. |
 | `options.user` | No | Show only PRs authored by this login. |
-| `options.runBeforeAskUpfront` | No | Run this top-level step before ask-upfront prompts. Defaults to `false`. |
 
 ### `create-pr`
 
@@ -202,8 +200,6 @@ flowchart TD
 | `options.merge` | Yes | `true` schedules merge after checks; `false` leaves the new PR open. |
 | `options.afterMerge` | When `merge` is `true` | Post-merge wait settings; not allowed when `merge` is `false`. |
 | `options.afterMerge.waitFor` | Yes with `afterMerge` | Workflow filenames to wait for successfully on the destination branch. An empty list is allowed. |
-| `options.askUpfront` | No | Collect this step’s early confirmation/input up front. Defaults to `true`. |
-| `options.confirmBeforeRun` | No | Let the user run or skip this action. Defaults to `true`. |
 
 ### `merge-pr`
 
@@ -271,8 +267,6 @@ flowchart TD
 | `type` | Yes | Must be `run-workflow`. |
 | `options.workflow` | Yes | Workflow filename in the platform workflow directory. |
 | `options.useWorkflowFromBranch` | Yes | Branch to use the workflow from (and dispatch on), matching the host UI picker. |
-| `options.askUpfront` | No | Collect workflow inputs up front instead of at this point in the flow. Defaults to `true`. |
-| `options.confirmBeforeRun` | No | Let the user run or skip it. Defaults to `true`. |
 | `options.waitUntilFinish` | No | Wait for each dispatched workflow to succeed. Defaults to `true`. |
 | `options.exitOnError` | No | Stop the pipeline when dispatch or waiting fails. Defaults to `true`. |
 | `options.when[].actionInputId` | With `repeat` | `workflow_dispatch` input id to vary across runs (for example `client`). |
@@ -284,8 +278,6 @@ A `one-of` step is not an action itself. It presents its `items` and runs exactl
 
 ```yaml
 type: one-of
-options:
-  askUpfront: true
 items:
   - type: create-pr
     options:
@@ -312,12 +304,12 @@ flowchart TD
 | Property | Required | Meaning |
 | --- | --- | --- |
 | `type` | Yes | Must be `one-of`. |
-| `options.askUpfront` | No | Ask the user to choose the path up front. Defaults to `true`. |
 | `items` | Yes | Two or more non-group (`type` + `options`) steps. Nested `one-of` is not supported. |
 
 ## Practical rules
 
 - Config files must be `.yaml` or `.yml`.
+- Steps always **prepare** first (confirm / collect inputs / choose one-of), then **execute** in config order. There is no mid-pipeline confirm for steps that already ran.
 - Workflow filenames are validated remotely before gitrung uses them.
 - `metadata.jsonc` keeps the history from previous runs, including recently used workflow inputs (and full repeat batches), plus source branches.
 - A normal run and `doctor` share the same health checks (IO permissions plus config validation); run `doctor` after editing a config to catch problems early.

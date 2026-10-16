@@ -26,63 +26,56 @@ import {
 } from "../workflow-inputs.ts";
 import {
   repeatActionInputId,
-  type AskUpfrontInputMap,
+  type PrecollectedInputMap,
   type RunWorkflowStep,
   type WorkflowInputValues,
   type YamlInput,
 } from "../schema.ts";
 import { waitForDispatchedWorkflowSuccess } from "./pr-shared.ts";
 
-export async function collectAskUpfrontWorkflowInputs(
+/** Validate remote, prompt for inputs, persist history. Used right after prepare Yes. */
+export async function collectPrecollectedWorkflowInputs(
   client: GitHostClient,
   label: string,
-  steps: { step: RunWorkflowStep; key: string; labelHint?: string }[],
-): Promise<AskUpfrontInputMap> {
-  const map: AskUpfrontInputMap = new Map();
-
-  for (const { step, key, labelHint } of steps) {
-    p.log.step(`Ask-upfront inputs: ${step.workflow} @ ${step.useWorkflowFromBranch}`);
-    await validateRunWorkflowRemote(client, step);
-    const sets = await collectWorkflowInputSets(client, label, step);
-    map.set(key, sets);
-    persistCollectedSets(label, step, sets);
-    if (sets.length > 0 && Object.keys(sets[0]!).length > 0) {
-      p.note(
-        formatInputSetsSummary(sets),
-        `Recorded in history for ${labelHint ?? `step ${key}`}`,
-      );
-    }
+  step: RunWorkflowStep,
+  opts?: { labelHint?: string },
+): Promise<WorkflowInputValues[]> {
+  await validateRunWorkflowRemote(client, step);
+  const sets = await collectWorkflowInputSets(client, label, step);
+  persistCollectedSets(label, step, sets);
+  if (sets.length > 0 && Object.keys(sets[0]!).length > 0) {
+    p.note(
+      formatInputSetsSummary(sets),
+      `Recorded in history for ${opts?.labelHint ?? step.workflow}`,
+    );
   }
-
-  return map;
+  return sets;
 }
 
 export async function runWorkflowStep(
   client: GitHostClient,
   label: string,
   step: RunWorkflowStep,
-  opts?: { stepKey?: string; askUpfrontInputs?: AskUpfrontInputMap },
+  opts?: { stepKey?: string; precollectedInputs?: PrecollectedInputMap },
 ): Promise<void> {
   const precollected =
     opts?.stepKey !== undefined
-      ? opts.askUpfrontInputs?.get(opts.stepKey)
+      ? opts.precollectedInputs?.get(opts.stepKey)
       : undefined;
 
-  let sets: WorkflowInputValues[];
+  if (precollected === undefined) {
+    throw new Error(
+      `Missing precollected inputs for workflow ${step.workflow} (step key ${opts?.stepKey ?? "?"})`,
+    );
+  }
 
-  if (precollected !== undefined) {
-    sets = precollected;
-    const hasInputs =
-      sets.length > 0 && Object.keys(sets[0] ?? {}).length > 0;
-    if (hasInputs) {
-      p.log.info(
-        `Using ask-upfront inputs for ${step.workflow} (${sets.length} set(s)):\n${formatInputSetsSummary(sets)}`,
-      );
-    }
-  } else {
-    await validateRunWorkflowRemote(client, step);
-    sets = await collectWorkflowInputSets(client, label, step);
-    persistCollectedSets(label, step, sets);
+  const sets = precollected;
+  const hasInputs =
+    sets.length > 0 && Object.keys(sets[0] ?? {}).length > 0;
+  if (hasInputs) {
+    p.log.info(
+      `Using prepared inputs for ${step.workflow} (${sets.length} set(s)):\n${formatInputSetsSummary(sets)}`,
+    );
   }
 
   const claimedRunIds = new Set<number>();
