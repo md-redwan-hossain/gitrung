@@ -145,7 +145,7 @@ async function runPipeline(opts: {
           timings.push({
             index,
             step: child.type,
-            desc: stepIdentity(child, sourceBranches.get(key)),
+            description: stepIdentity(child, sourceBranches.get(key)),
             ms: Date.now() - startTime,
           });
         }
@@ -182,7 +182,7 @@ async function runPipeline(opts: {
         timings.push({
           index,
           step: step.type,
-          desc: stepIdentity(step, sourceBranches.get(stepKey(index))),
+          description: stepIdentity(step, sourceBranches.get(stepKey(index))),
           ms: Date.now() - startTime,
         });
       }
@@ -213,7 +213,7 @@ type PipelineMaps = {
 type StepTiming = {
   index: number;
   step: string;
-  desc: string;
+  description: string;
   ms: number;
 };
 
@@ -233,10 +233,10 @@ function printStepTimings(timings: StepTiming[]): void {
     String(t.index + 1),
     chalk.green(t.step),
     formatDuration(t.ms),
-    t.desc,
+    t.description,
   ]);
   p.log.info(
-    `Total time taken: ${formatDuration(totalMs)}\n${formatCliTable(rows, { head: ["#", "step", "time", "desc"] })}`,
+    `Total time taken: ${formatDuration(totalMs)}\n${formatCliTable(rows, { head: ["#", "step", "time", "description"] })}`,
   );
 }
 
@@ -257,7 +257,7 @@ async function runBeforeAskUpfrontListPrSteps(
     timings.push({
       index,
       step: step.type,
-      desc: stepIdentity(step),
+      description: stepIdentity(step),
       ms: Date.now() - startTime,
     });
     alreadyRan.add(index);
@@ -654,7 +654,7 @@ function formatStepBlock(
   step: LeafStep,
   resolvedSource?: string,
 ): string {
-  const header = `${prefix}${chalk.green(stepIdentity(step, resolvedSource))}`;
+  const header = `${prefix}${chalk.cyan(`(${step.type})`)} ${chalk.green(stepIdentity(step, resolvedSource))}`;
   const table = formatParamTable(stepParamRows(step, resolvedSource));
   return table ? `${header}\n${table}` : header;
 }
