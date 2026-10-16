@@ -654,7 +654,12 @@ function formatStepBlock(
   step: LeafStep,
   resolvedSource?: string,
 ): string {
-  const header = `${prefix}${chalk.cyan(`(${step.type})`)} ${chalk.green(stepIdentity(step, resolvedSource))}`;
+  const identity = stepIdentity(step, resolvedSource);
+  const tool = chalk.cyan(`(${step.type})`);
+  const header =
+    identity === step.type
+      ? `${prefix}${tool}`
+      : `${prefix}${tool} ${chalk.green(identity)}`;
   const table = formatParamTable(stepParamRows(step, resolvedSource));
   return table ? `${header}\n${table}` : header;
 }
