@@ -4,14 +4,13 @@ import { unzipSync } from "fflate";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
-  copyFileSync,
   existsSync,
   readFileSync,
   renameSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { checkUpgradeWriteAccess, isBunRuntime } from "./io-access.ts";
 import { createSpinner } from "./spinner.ts";
 
@@ -214,7 +213,7 @@ export function cleanupStaleUpgradeArtifacts(): void {
   cleanupPreviousExecutable(executable);
 }
 
-function replaceWindowsExecutable(
+function replaceRunningExecutable(
   executable: string,
   replacement: string,
 ): void {
@@ -262,21 +261,12 @@ async function replaceExecutable(
   executable: string,
   replacementBytes: Uint8Array,
 ): Promise<void> {
-  const replacement =
-    process.platform === "win32"
-      ? siblingExecutable(executable, "new")
-      : join(
-          dirname(executable),
-          `.${basename(executable)}.upgrade-${Date.now()}`,
-        );
+  const replacement = siblingExecutable(executable, "new");
   writeFileSync(replacement, replacementBytes);
-  if (process.platform === "win32") {
-    replaceWindowsExecutable(executable, replacement);
-    return;
+  if (process.platform !== "win32") {
+    chmodSync(replacement, 0o755);
   }
-  chmodSync(replacement, 0o755);
-  copyFileSync(replacement, executable);
-  unlinkSync(replacement);
+  replaceRunningExecutable(executable, replacement);
 }
 
 export async function runUpgrade(): Promise<void> {
@@ -322,9 +312,7 @@ export async function runUpgrade(): Promise<void> {
     }
     await replaceExecutable(executable, replacementBytes);
     p.outro(
-      process.platform === "win32"
-        ? "Updated successfully. Restart gitrung to use the new binary."
-        : "Updated successfully.",
+      "Updated successfully. Restart gitrung to use the new binary.",
     );
   } catch (err) {
     p.log.error(err instanceof Error ? err.message : String(err));
