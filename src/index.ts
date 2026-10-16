@@ -49,7 +49,7 @@ async function main(): Promise<void> {
   const program = new Command();
   program
     .name("gitrung")
-    .description("Run declarative Gitea/GitHub PR + workflow automation steps")
+    .description("Declarative Gitops")
     .option("-r, --repo <label>", "Repo label (configs/<label>.yaml filename stem)")
     .option("-c, --config <path>", "Path to configs directory")
     .action(async () => {
