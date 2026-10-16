@@ -144,7 +144,8 @@ async function runPipeline(opts: {
           const key = stepKey(index, subIndex);
           timings.push({
             index,
-            label: stepIdentity(child, sourceBranches.get(key)),
+            step: child.type,
+            desc: stepIdentity(child, sourceBranches.get(key)),
             ms: Date.now() - startTime,
           });
         }
@@ -180,7 +181,8 @@ async function runPipeline(opts: {
       if (ran) {
         timings.push({
           index,
-          label: stepIdentity(step, sourceBranches.get(stepKey(index))),
+          step: step.type,
+          desc: stepIdentity(step, sourceBranches.get(stepKey(index))),
           ms: Date.now() - startTime,
         });
       }
@@ -208,7 +210,12 @@ type PipelineMaps = {
   shownHeaders: Set<number>;
 };
 
-type StepTiming = { index: number; label: string; ms: number };
+type StepTiming = {
+  index: number;
+  step: string;
+  desc: string;
+  ms: number;
+};
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
@@ -221,15 +228,15 @@ function formatDuration(ms: number): string {
 
 function printStepTimings(timings: StepTiming[]): void {
   if (timings.length === 0) return;
+  const totalMs = timings.reduce((sum, t) => sum + t.ms, 0);
   const rows = timings.map((t) => [
     String(t.index + 1),
-    chalk.green(t.label),
+    chalk.green(t.step),
     formatDuration(t.ms),
+    t.desc,
   ]);
-  const totalMs = timings.reduce((sum, t) => sum + t.ms, 0);
-  rows.push(["", "total", formatDuration(totalMs)]);
   p.log.info(
-    `Step timings\n${formatCliTable(rows, { head: ["#", "step", "time"] })}`,
+    `Total time taken: ${formatDuration(totalMs)}\n${formatCliTable(rows, { head: ["#", "step", "time", "desc"] })}`,
   );
 }
 
@@ -249,7 +256,8 @@ async function runBeforeAskUpfrontListPrSteps(
     await runListPrStep(client, step);
     timings.push({
       index,
-      label: stepIdentity(step),
+      step: step.type,
+      desc: stepIdentity(step),
       ms: Date.now() - startTime,
     });
     alreadyRan.add(index);
