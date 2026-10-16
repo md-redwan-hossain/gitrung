@@ -72,7 +72,7 @@ gitrung/
     └── storefront.yaml
 ```
 
-3. Copy `configs/my-repo.yaml.example` to `configs/storefront.yaml`, then replace the dummy values.
+3. Create `configs/storefront.yaml` (or any `<name>.yaml`) with your repo URL, platform, and steps.
 4. Add the matching token to `.env`:
 
 ```sh

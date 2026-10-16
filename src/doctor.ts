@@ -27,17 +27,17 @@ export function runHealthChecks(configDir?: string): HealthCheckResult {
 }
 
 export function reportHealthResult(result: HealthCheckResult): void {
-  p.log.info(`Config: ${result.path}`);
-
-  for (const w of result.warnings) {
-    p.log.warn(w);
-  }
-
   if (!result.ok) {
     for (const err of result.errors) {
       p.log.error(err);
     }
     return;
+  }
+
+  p.log.info(`Config: ${result.path}`);
+
+  for (const w of result.warnings) {
+    p.log.warn(w);
   }
 
   const { config } = result;
@@ -50,16 +50,15 @@ export function reportHealthResult(result: HealthCheckResult): void {
 }
 
 export function runDoctor(configPath?: string): void {
-  p.intro("gitrung doctor");
-
   const result = runHealthChecks(configPath);
-  reportHealthResult(result);
 
   if (!result.ok) {
-    p.outro("Config has problems.");
+    reportHealthResult(result);
     process.exit(1);
   }
 
+  p.intro("gitrung doctor");
+  reportHealthResult(result);
   p.outro("Healthy.");
   process.exit(0);
 }

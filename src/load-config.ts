@@ -38,14 +38,12 @@ function labelFromFilename(name: string): string {
 export function tryLoadConfig(configDir?: string): LoadConfigResult {
   const path = configDir ? resolve(configDir) : defaultConfigDir();
   const warnings: string[] = [];
-  const hint =
-    "Copy configs/my-repo.yaml.example to configs/<name>.yaml and edit it.";
 
   if (!existsSync(path)) {
     return {
       ok: false,
       path,
-      errors: [`Configs directory not found: ${path}`, hint],
+      errors: [`Configs directory not found: ${path}`],
       warnings,
     };
   }
@@ -69,7 +67,6 @@ export function tryLoadConfig(configDir?: string): LoadConfigResult {
       path,
       errors: [
         `Config path must be a directory of .yaml/.yml files: ${path}`,
-        hint,
       ],
       warnings,
     };
@@ -103,7 +100,7 @@ export function tryLoadConfig(configDir?: string): LoadConfigResult {
     return {
       ok: false,
       path,
-      errors: [`No .yaml or .yml config files in: ${path}`, hint],
+      errors: [`No .yaml or .yml config files in: ${path}`],
       warnings,
     };
   }
@@ -183,7 +180,7 @@ export function tryLoadConfig(configDir?: string): LoadConfigResult {
     return {
       ok: false,
       path,
-      errors: [`No usable repo configs in: ${path}`, hint],
+      errors: [`No usable repo configs in: ${path}`],
       warnings,
     };
   }

@@ -77,14 +77,13 @@ async function runPipeline(opts: {
   repo?: string;
   config?: string;
 }): Promise<void> {
-  p.intro("gitrung");
-
   const health = runHealthChecks(opts.config);
   if (!health.ok) {
     reportHealthResult(health);
-    p.outro("Config has problems.");
     process.exit(1);
   }
+
+  p.intro("gitrung");
   for (const w of health.warnings) {
     p.log.warn(w);
   }

@@ -36,7 +36,7 @@ export function checkIoAccess(configDir?: string): IoCheckResult {
   const warnings: string[] = [];
 
   const configsPath = configDir ? resolve(configDir) : defaultConfigDir();
-  if (!canAccess(configsPath, constants.R_OK)) {
+  if (existsSync(configsPath) && !canAccess(configsPath, constants.R_OK)) {
     errors.push(`Configs not readable: ${configsPath}`);
   }
 
