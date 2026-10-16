@@ -152,16 +152,14 @@ async function runPipeline(opts: {
         continue;
       }
 
-      if (!shownHeaders.has(index)) {
-        p.log.step(
-          formatStepLine(
-            index,
-            repo.steps.length,
-            step,
-            sourceBranches.get(stepKey(index)),
-          ),
-        );
-      }
+      p.log.step(
+        formatStepTitle(
+          index,
+          repo.steps.length,
+          step,
+          sourceBranches.get(stepKey(index)),
+        ),
+      );
       const startTime = Date.now();
       const ran = await runLeafStep(
         client,
@@ -649,17 +647,31 @@ function formatParamTable(rows: ParamRow[]): string {
   return formatKeyValueTable(rows);
 }
 
-function formatStepBlock(
-  prefix: string,
+function formatToolIdentity(
   step: LeafStep,
   resolvedSource?: string,
 ): string {
   const identity = stepIdentity(step, resolvedSource);
   const tool = chalk.cyan(`(${step.type})`);
-  const header =
-    identity === step.type
-      ? `${prefix}${tool}`
-      : `${prefix}${tool} ${chalk.green(identity)}`;
+  return identity === step.type ? tool : `${tool} ${chalk.green(identity)}`;
+}
+
+/** Title-only step header (no param table) — used when a step starts executing. */
+function formatStepTitle(
+  index: number,
+  total: number,
+  step: LeafStep,
+  resolvedSource?: string,
+): string {
+  return `${chalk.yellow(`[${index + 1}/${total}]`)} ${formatToolIdentity(step, resolvedSource)}`;
+}
+
+function formatStepBlock(
+  prefix: string,
+  step: LeafStep,
+  resolvedSource?: string,
+): string {
+  const header = `${prefix}${formatToolIdentity(step, resolvedSource)}`;
   const table = formatParamTable(stepParamRows(step, resolvedSource));
   return table ? `${header}\n${table}` : header;
 }
@@ -702,16 +714,14 @@ async function runGroupStep(
 
   const child = group.items[subIndex]!;
   const key = stepKey(groupIndex, subIndex);
-  if (!maps.shownHeaders.has(groupIndex)) {
-    p.log.step(
-      formatStepLine(
-        groupIndex,
-        totalSteps,
-        child,
-        maps.sourceBranches.get(key),
-      ),
-    );
-  }
+  p.log.step(
+    formatStepTitle(
+      groupIndex,
+      totalSteps,
+      child,
+      maps.sourceBranches.get(key),
+    ),
+  );
 
   return runLeafStep(
     client,
