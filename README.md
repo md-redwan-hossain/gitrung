@@ -145,6 +145,7 @@ type: list-pr
 options:
   status: open
   user: alex
+  confirmBeforeRun: true
 ```
 
 ```mermaid
@@ -161,6 +162,7 @@ flowchart TD
 | `type` | Yes | Must be `list-pr`. |
 | `options.status` | Yes | PR state: `open`, `closed`, or `all`. |
 | `options.user` | No | Show only PRs authored by this login. |
+| `options.confirmBeforeRun` | No | Default `false`. If `true`, prepare asks Yes/Skip before the step runs. |
 
 ### `create-pr`
 

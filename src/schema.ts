@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+export const StepType = {
+  CREATE_PR: "create-pr",
+  RUN_WORKFLOW: "run-workflow",
+  LIST_PR: "list-pr",
+  MERGE_PR: "merge-pr",
+  ONE_OF: "one-of",
+} as const;
+
+export type StepTypeName = (typeof StepType)[keyof typeof StepType];
+
 export const PrStatusSchema = z.enum(["open", "closed", "all"]);
 export const GitPlatformSchema = z.enum(["gitea", "github"]);
 
@@ -30,7 +40,7 @@ export const CreatePrOptionsSchema = z.discriminatedUnion("merge", [
 
 export const CreatePrStepSchema = z
   .object({
-    type: z.literal("create-pr"),
+    type: z.literal(StepType.CREATE_PR),
     options: CreatePrOptionsSchema,
   })
   .transform(({ type, options }) => ({ type, ...options }));
@@ -50,7 +60,7 @@ export const RunWorkflowOptionsSchema = z.object({
 
 export const RunWorkflowStepSchema = z
   .object({
-    type: z.literal("run-workflow"),
+    type: z.literal(StepType.RUN_WORKFLOW),
     options: RunWorkflowOptionsSchema,
   })
   .transform(({ type, options }) => ({ type, ...options }));
@@ -58,11 +68,12 @@ export const RunWorkflowStepSchema = z
 export const ListPrOptionsSchema = z.object({
   status: PrStatusSchema,
   user: z.string().optional(),
+  confirmBeforeRun: z.boolean().default(false),
 });
 
 export const ListPrStepSchema = z
   .object({
-    type: z.literal("list-pr"),
+    type: z.literal(StepType.LIST_PR),
     options: ListPrOptionsSchema,
   })
   .transform(({ type, options }) => ({ type, ...options }));
@@ -78,7 +89,7 @@ export const MergePrOptionsSchema = z.object({
 
 export const MergePrStepSchema = z
   .object({
-    type: z.literal("merge-pr"),
+    type: z.literal(StepType.MERGE_PR),
     options: MergePrOptionsSchema,
   })
   .transform(({ type, options }) => ({ type, ...options }));
@@ -94,7 +105,7 @@ export const LeafStepSchema = z.union([
 /** One-level exclusive choice: steps → items only. */
 export const StepGroupSchema = z
   .object({
-    type: z.literal("one-of"),
+    type: z.literal(StepType.ONE_OF),
     items: z.array(LeafStepSchema).min(2),
   })
   .transform(({ type, items }) => ({
@@ -307,7 +318,7 @@ export type SelectedSubStepMap = Map<number, number>;
 export type MergePrNumberMap = Map<string, number>;
 
 export function isStepGroup(step: PipelineStep): step is StepGroup {
-  return step.type === "one-of";
+  return step.type === StepType.ONE_OF;
 }
 
 export function stepKey(stepIndex: number, subIndex?: number): string {

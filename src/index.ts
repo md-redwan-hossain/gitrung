@@ -30,6 +30,7 @@ import {
 import { cleanupStaleUpgradeArtifacts, runUpgrade } from "./upgrade.ts";
 import {
   isStepGroup,
+  StepType,
   stepKey,
   type CreatePrStep,
   type LeafStep,
@@ -275,7 +276,7 @@ async function runPrepareLeaf(
 ): Promise<void> {
   const { leaf, key, index, fromOneOfGroup } = ctx;
 
-  if (leaf.type === "create-pr") {
+  if (leaf.type === StepType.CREATE_PR) {
     const initial = await resolveSourceBranch(label, leaf);
     p.log.step(formatStepTitle(index, totalSteps, leaf, initial));
     const result = await confirmCreatePrStep(
@@ -317,7 +318,7 @@ async function runPrepareLeaf(
     }
   }
 
-  if (leaf.type === "run-workflow") {
+  if (leaf.type === StepType.RUN_WORKFLOW) {
     p.log.step(formatStepTitle(index, totalSteps, leaf));
     const ok = await confirmRunWorkflowStep();
     if (!ok) {
@@ -329,26 +330,37 @@ async function runPrepareLeaf(
     }
     const sets = await collectPrecollectedWorkflowInputs(client, label, leaf, {
       labelHint: fromOneOfGroup
-        ? `step ${index + 1} (one-of)`
+        ? `step ${index + 1} (${StepType.ONE_OF})`
         : `step ${index + 1}`,
     });
     maps.precollectedInputs.set(key, sets);
     return;
   }
 
-  if (leaf.type === "merge-pr") {
+  if (leaf.type === StepType.MERGE_PR) {
     // Collect PR# early when chosen under a one-of group
     if (!fromOneOfGroup) return;
     const validated = await promptValidatedMergePrNumber(
       client,
       leaf,
-      `Enter PR number for step ${index + 1} (merge-pr)`,
+      `Enter PR number for step ${index + 1} (${StepType.MERGE_PR})`,
     );
     maps.mergePrNumbers.set(key, validated.pr.number);
     return;
   }
 
-  if (leaf.type === "list-pr") return;
+  if (leaf.type === StepType.LIST_PR) {
+    if (!leaf.confirmBeforeRun) return;
+    p.log.step(formatStepTitle(index, totalSteps, leaf));
+    const ok = await confirmRunWorkflowStep();
+    if (!ok) {
+      maps.skipped.add(index);
+      p.log.info(
+        `Will skip step ${index + 1}: ${chalk.green(stepIdentity(leaf))}`,
+      );
+    }
+    return;
+  }
 
   const _exhaustive: never = leaf;
   throw new Error(`Unknown leaf: ${JSON.stringify(_exhaustive)}`);
@@ -383,7 +395,9 @@ async function runPreparePhase(
     const subIndex = await selectSubStep(step, index, steps.length);
     if (subIndex === "skip") {
       skipped.add(index);
-      p.log.info(`Will skip step ${index + 1}: ${chalk.green("one-of")}`);
+      p.log.info(
+        `Will skip step ${index + 1}: ${chalk.green(StepType.ONE_OF)}`,
+      );
       continue;
     }
     selectedSubSteps.set(index, subIndex);
@@ -491,24 +505,24 @@ async function pickRepo(
 type ParamRow = { key: string; value: string };
 
 function stepIdentity(step: LeafStep, resolvedSource?: string): string {
-  if (step.type === "create-pr") {
+  if (step.type === StepType.CREATE_PR) {
     const source = resolvedSource ?? step.sourceBranch ?? "prompt";
     return `${source} → ${step.destinationBranch}`;
   }
-  if (step.type === "run-workflow") {
+  if (step.type === StepType.RUN_WORKFLOW) {
     return `${step.workflow} @ ${step.useWorkflowFromBranch}`;
   }
-  if (step.type === "list-pr") {
-    return "list-pr";
+  if (step.type === StepType.LIST_PR) {
+    return StepType.LIST_PR;
   }
-  return "merge-pr";
+  return StepType.MERGE_PR;
 }
 
 function stepParamRows(
   step: LeafStep,
   resolvedSource?: string,
 ): ParamRow[] {
-  if (step.type === "create-pr") {
+  if (step.type === StepType.CREATE_PR) {
     const source = resolvedSource ?? step.sourceBranch ?? "prompt";
     const rows: ParamRow[] = [
       { key: "source", value: source },
@@ -525,12 +539,15 @@ function stepParamRows(
     if (step.body) rows.push({ key: "body", value: step.body });
     return rows;
   }
-  if (step.type === "list-pr") {
+  if (step.type === StepType.LIST_PR) {
     const rows: ParamRow[] = [{ key: "status", value: step.status }];
     if (step.user) rows.push({ key: "user", value: step.user });
+    if (step.confirmBeforeRun) {
+      rows.push({ key: "confirmBeforeRun", value: "true" });
+    }
     return rows;
   }
-  if (step.type === "merge-pr") {
+  if (step.type === StepType.MERGE_PR) {
     if (step.when.length === 0) {
       return [{ key: "when", value: "—" }];
     }
@@ -641,11 +658,11 @@ async function runLeafStep(
   key: string,
   maps: Omit<PipelineMaps, "selectedSubSteps">,
 ): Promise<boolean> {
-  if (step.type === "create-pr") {
+  if (step.type === StepType.CREATE_PR) {
     return runCreatePrWithResolve(client, step, key, maps.sourceBranches);
   }
 
-  if (step.type === "run-workflow") {
+  if (step.type === StepType.RUN_WORKFLOW) {
     await runWorkflowStep(client, label, step, {
       stepKey: key,
       precollectedInputs: maps.precollectedInputs,
@@ -653,12 +670,12 @@ async function runLeafStep(
     return true;
   }
 
-  if (step.type === "list-pr") {
+  if (step.type === StepType.LIST_PR) {
     await runListPrStep(client, step);
     return true;
   }
 
-  if (step.type === "merge-pr") {
+  if (step.type === StepType.MERGE_PR) {
     const precollected = maps.mergePrNumbers.get(key);
     await runMergePrStep(client, step, {
       prNumber: precollected,
