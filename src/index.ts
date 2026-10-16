@@ -4,7 +4,7 @@ import chalk from "chalk";
 import { Command } from "commander";
 import { createGitClient } from "./create-git-client.ts";
 import { reportHealthResult, runDoctor, runHealthChecks } from "./doctor.ts";
-import { formatKeyValueTable } from "./format-table.ts";
+import { formatCliTable, formatKeyValueTable } from "./format-table.ts";
 import type { GitHostClient } from "./git-host.ts";
 import { loadToken } from "./load-config.ts";
 import { parseRepoUrl } from "./parse-repo-url.ts";
@@ -90,78 +90,113 @@ async function runPipeline(opts: {
   }
   const { config } = health;
 
-  const repo = await pickRepo(config, opts.repo);
-  const token = loadToken(repo.gitPlatform);
-  const parsed = parseRepoUrl(repo.url, repo.gitPlatform);
-  const client = createGitClient(parsed, token);
+  let first = true;
+  while (true) {
+    const repo = await pickRepo(config, first ? opts.repo : undefined);
+    first = false;
+    const token = loadToken(repo.gitPlatform);
+    const parsed = parseRepoUrl(repo.url, repo.gitPlatform);
+    const client = createGitClient(parsed, token);
 
-  p.log.info(
-    `Repo: ${repo.label} (${parsed.owner}/${parsed.repo}) [${repo.gitPlatform}]`,
-  );
-  p.log.info(`${repo.steps.length} step(s)`);
+    p.log.info(
+      `Repo: ${repo.label} (${parsed.owner}/${parsed.repo}) [${repo.gitPlatform}]`,
+    );
+    p.log.info(`${repo.steps.length} step(s)`);
 
-  const alreadyRan = await runBeforeAskUpfrontListPrSteps(client, repo.steps);
+    const timings: StepTiming[] = [];
+    const { alreadyRan, timings: earlyTimings } =
+      await runBeforeAskUpfrontListPrSteps(client, repo.steps);
+    timings.push(...earlyTimings);
 
-  const {
-    askUpfrontInputs,
-    skipped,
-    sourceBranches,
-    selectedSubSteps,
-    mergePrNumbers,
-    shownHeaders,
-  } = await runAskUpfrontPhase(client, repo.label, repo.steps);
+    const {
+      askUpfrontInputs,
+      skipped,
+      sourceBranches,
+      selectedSubSteps,
+      mergePrNumbers,
+      shownHeaders,
+    } = await runAskUpfrontPhase(client, repo.label, repo.steps);
 
-  for (const [index, step] of repo.steps.entries()) {
-    // Early-run / ask-upfront already logged these; do not reprint.
-    if (alreadyRan.has(index) || skipped.has(index)) continue;
+    for (const [index, step] of repo.steps.entries()) {
+      // Early-run / ask-upfront already logged these; do not reprint.
+      if (alreadyRan.has(index) || skipped.has(index)) continue;
 
-    if (isStepGroup(step)) {
-      await runGroupStep(
+      if (isStepGroup(step)) {
+        const startTime = Date.now();
+        const ran = await runGroupStep(
+          client,
+          repo.label,
+          step,
+          index,
+          repo.steps.length,
+          {
+            askUpfrontInputs,
+            skipped,
+            sourceBranches,
+            selectedSubSteps,
+            mergePrNumbers,
+            shownHeaders,
+          },
+        );
+        if (ran) {
+          const subIndex = selectedSubSteps.get(index)!;
+          const child = step.items[subIndex]!;
+          const key = stepKey(index, subIndex);
+          timings.push({
+            index,
+            label: stepIdentity(child, sourceBranches.get(key)),
+            ms: Date.now() - startTime,
+          });
+        }
+        continue;
+      }
+
+      if (!shownHeaders.has(index)) {
+        p.log.step(
+          formatStepLine(
+            index,
+            repo.steps.length,
+            step,
+            sourceBranches.get(stepKey(index)),
+          ),
+        );
+      }
+      const startTime = Date.now();
+      const ran = await runLeafStep(
         client,
         repo.label,
         step,
+        stepKey(index),
         index,
         repo.steps.length,
         {
           askUpfrontInputs,
           skipped,
           sourceBranches,
-          selectedSubSteps,
           mergePrNumbers,
           shownHeaders,
         },
       );
-      continue;
-    }
-
-    if (!shownHeaders.has(index)) {
-      p.log.step(
-        formatStepLine(
+      if (ran) {
+        timings.push({
           index,
-          repo.steps.length,
-          step,
-          sourceBranches.get(stepKey(index)),
-        ),
-      );
+          label: stepIdentity(step, sourceBranches.get(stepKey(index))),
+          ms: Date.now() - startTime,
+        });
+      }
     }
-    await runLeafStep(
-      client,
-      repo.label,
-      step,
-      stepKey(index),
-      index,
-      repo.steps.length,
-      {
-        askUpfrontInputs,
-        skipped,
-        sourceBranches,
-        mergePrNumbers,
-        shownHeaders,
-      },
-    );
-  }
 
-  p.outro("Done.");
+    printStepTimings(timings);
+
+    const again = await p.confirm({
+      message: chalk.yellow("Perform another task?"),
+      initialValue: true,
+    });
+    if (p.isCancel(again) || !again) {
+      p.outro("Done.");
+      return;
+    }
+  }
 }
 
 type PipelineMaps = {
@@ -173,22 +208,54 @@ type PipelineMaps = {
   shownHeaders: Set<number>;
 };
 
+type StepTiming = { index: number; label: string; ms: number };
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rem = seconds - minutes * 60;
+  return `${minutes}m ${Math.round(rem)}s`;
+}
+
+function printStepTimings(timings: StepTiming[]): void {
+  if (timings.length === 0) return;
+  const rows = timings.map((t) => [
+    String(t.index + 1),
+    chalk.green(t.label),
+    formatDuration(t.ms),
+  ]);
+  const totalMs = timings.reduce((sum, t) => sum + t.ms, 0);
+  rows.push(["", "total", formatDuration(totalMs)]);
+  p.log.info(
+    `Step timings\n${formatCliTable(rows, { head: ["#", "step", "time"] })}`,
+  );
+}
+
 /** list-pr steps with runBeforeAskUpfront run before ask-upfront prompts; indices skipped in the main loop. */
 async function runBeforeAskUpfrontListPrSteps(
   client: GitHostClient,
   steps: PipelineStep[],
-): Promise<Set<number>> {
+): Promise<{ alreadyRan: Set<number>; timings: StepTiming[] }> {
   const alreadyRan = new Set<number>();
+  const timings: StepTiming[] = [];
 
   for (const [index, step] of steps.entries()) {
     if (isStepGroup(step)) continue;
     if (step.type !== "list-pr" || !step.runBeforeAskUpfront) continue;
     p.log.step(formatStepLine(index, steps.length, step));
+    const startTime = Date.now();
     await runListPrStep(client, step);
+    timings.push({
+      index,
+      label: stepIdentity(step),
+      ms: Date.now() - startTime,
+    });
     alreadyRan.add(index);
   }
 
-  return alreadyRan;
+  return { alreadyRan, timings };
 }
 
 type AskUpfrontLeafContext = {
@@ -604,9 +671,9 @@ async function runGroupStep(
   groupIndex: number,
   totalSteps: number,
   maps: PipelineMaps,
-): Promise<void> {
+): Promise<boolean> {
   // Main loop already continues for skipped; keep as a quiet guard.
-  if (maps.skipped.has(groupIndex)) return;
+  if (maps.skipped.has(groupIndex)) return false;
 
   let subIndex = maps.selectedSubSteps.get(groupIndex);
   if (subIndex === undefined) {
@@ -614,7 +681,7 @@ async function runGroupStep(
     if (selected === "skip") {
       maps.skipped.add(groupIndex);
       p.log.info(`Skipped: ${chalk.green("one-of")}`);
-      return;
+      return false;
     }
     subIndex = selected;
     maps.selectedSubSteps.set(groupIndex, subIndex);
@@ -633,7 +700,7 @@ async function runGroupStep(
     );
   }
 
-  await runLeafStep(
+  return runLeafStep(
     client,
     label,
     child,
@@ -652,9 +719,9 @@ async function runLeafStep(
   topIndex: number,
   totalSteps: number,
   maps: Omit<PipelineMaps, "selectedSubSteps">,
-): Promise<void> {
+): Promise<boolean> {
   if (step.type === "create-pr") {
-    await runCreatePrWithResolve(
+    return runCreatePrWithResolve(
       client,
       label,
       step,
@@ -663,7 +730,6 @@ async function runLeafStep(
       totalSteps,
       maps.sourceBranches,
     );
-    return;
   }
 
   if (step.type === "run-workflow" && step.confirmBeforeRun) {
@@ -672,7 +738,7 @@ async function runLeafStep(
       const ok = await confirmRunWorkflowStep();
       if (!ok) {
         p.log.info(formatStepBlock("Skipped: ", step));
-        return;
+        return false;
       }
     }
   }
@@ -682,12 +748,12 @@ async function runLeafStep(
       stepKey: key,
       askUpfrontInputs: maps.askUpfrontInputs,
     });
-    return;
+    return true;
   }
 
   if (step.type === "list-pr") {
     await runListPrStep(client, step);
-    return;
+    return true;
   }
 
   if (step.type === "merge-pr") {
@@ -695,7 +761,7 @@ async function runLeafStep(
     await runMergePrStep(client, step, {
       prNumber: precollected,
     });
-    return;
+    return true;
   }
 
   const _exhaustive: never = step;
@@ -710,7 +776,7 @@ async function runCreatePrWithResolve(
   stepIndex: number,
   totalSteps: number,
   sourceBranches: SourceBranchMap,
-): Promise<void> {
+): Promise<boolean> {
   let source = sourceBranches.get(key);
 
   if (source === undefined) {
@@ -730,7 +796,7 @@ async function runCreatePrWithResolve(
       );
       if (result.action === "skip") {
         p.log.info(formatStepBlock("Skipped: ", step, source));
-        return;
+        return false;
       }
       source = result.sourceBranch;
     }
@@ -739,6 +805,7 @@ async function runCreatePrWithResolve(
   }
 
   await runCreatePrStep(client, step, { sourceBranch: source });
+  return true;
 }
 
 main().catch((err) => {

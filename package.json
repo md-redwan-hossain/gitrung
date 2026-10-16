@@ -20,10 +20,10 @@
     "fflate": "^0.8.3",
     "log-symbols": "^7.0.1",
     "ora": "^9.4.1",
-    "zod": "^4"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.4.3",
     "typescript": "^7"
   }
 }
