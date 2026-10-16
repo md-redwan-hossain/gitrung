@@ -83,7 +83,7 @@ async function runPipeline(opts: {
     process.exit(1);
   }
 
-  p.intro("gitrung");
+  p.intro("gitrung - Declarative Gitops");
   for (const w of health.warnings) {
     p.log.warn(w);
   }
