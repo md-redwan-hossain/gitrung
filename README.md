@@ -66,7 +66,7 @@ steps:
 ```text
 gitrung/
 ├── gitrung                 # macOS/Linux binary (from the zip)
-├── gitrung.exe             # Windows binary (from the zip; rename if needed)
+├── gitrung.exe             # Windows binary (from the zip)
 ├── .env
 └── configs/
     └── storefront.yaml

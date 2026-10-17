@@ -35,9 +35,15 @@ jobs:
           cd dist
           for binary in gitrung-windows-x64.exe gitrung-linux-x64 gitrung-darwin-arm64 gitrung-darwin-x64; do
             stem="${binary%.exe}"
-            sha256sum "$binary" > "${stem}.sha256"
-            zip -j "${stem}.zip" "$binary"
-            rm "$binary"
+            if [[ "$binary" == *.exe ]]; then
+              plain="gitrung.exe"
+            else
+              plain="gitrung"
+            fi
+            mv "$binary" "$plain"
+            sha256sum "$plain" > "${stem}.sha256"
+            zip -j "${stem}.zip" "$plain"
+            rm "$plain"
           done
 
       - name: Delete existing latest release
