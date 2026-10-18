@@ -8,6 +8,7 @@ import {
 } from "../validate-remote.ts";
 import {
   assertPrMergeable,
+  waitForPrChecks,
   waitForPrMerged,
   waitForWorkflowSuccess,
 } from "./pr-shared.ts";
@@ -125,6 +126,8 @@ export async function runCreatePrStep(
     mergeSpinner.fail(`Failed to merge PR #${pr.number}`);
     throw err;
   }
+
+  await waitForPrChecks(client, pr.number);
 
   const mergedAt = await waitForPrMerged(client, pr.number);
 
