@@ -1,11 +1,11 @@
 import { z } from "zod";
 
 export const StepType = {
-  CREATE_PR: "create-pr",
-  RUN_WORKFLOW: "run-workflow",
-  LIST_PR: "list-pr",
-  MERGE_PR: "merge-pr",
-  ONE_OF: "one-of",
+  CREATE_PR: "create_pr",
+  RUN_WORKFLOW: "run_workflow",
+  LIST_PR: "list_pr",
+  MERGE_PR: "merge_pr",
+  ONE_OF: "one_of",
 } as const;
 
 export type StepTypeName = (typeof StepType)[keyof typeof StepType];
@@ -15,22 +15,22 @@ export const GitPlatformSchema = z.enum(["gitea", "github"]);
 
 export const CreatePrAfterMergeSchema = z.object({
   // empty array allowed = no post-merge workflow waits
-  waitFor: z.array(z.string().min(1)),
+  wait_for: z.array(z.string().min(1)),
 });
 
 const CreatePrOptionsShared = {
-  sourceBranch: z.string().min(1).optional(),
-  destinationBranch: z.string().min(1),
+  source_branch: z.string().min(1).optional(),
+  destination_branch: z.string().min(1),
   title: z.string().optional(),
   body: z.string().optional(),
 };
 
-/** merge:true requires afterMerge; merge:false forbids it. */
+/** merge:true requires after_merge; merge:false forbids it. */
 export const CreatePrOptionsSchema = z.discriminatedUnion("merge", [
   z.object({
     ...CreatePrOptionsShared,
     merge: z.literal(true),
-    afterMerge: CreatePrAfterMergeSchema,
+    after_merge: CreatePrAfterMergeSchema,
   }),
   z.object({
     ...CreatePrOptionsShared,
@@ -46,15 +46,15 @@ export const CreatePrStepSchema = z
   .transform(({ type, options }) => ({ type, ...options }));
 
 export const RunWorkflowWhenSchema = z.object({
-  actionInputId: z.string().min(1),
+  action_input_id: z.string().min(1),
   repeat: z.boolean(),
 });
 
 export const RunWorkflowOptionsSchema = z.object({
   workflow: z.string().min(1),
-  useWorkflowFromBranch: z.string().min(1),
-  waitUntilFinish: z.boolean().default(true),
-  exitOnError: z.boolean().default(true),
+  use_workflow_from_branch: z.string().min(1),
+  wait_until_finish: z.boolean().default(true),
+  exit_on_error: z.boolean().default(true),
   when: z.array(RunWorkflowWhenSchema).default([]),
 });
 
@@ -68,7 +68,7 @@ export const RunWorkflowStepSchema = z
 export const ListPrOptionsSchema = z.object({
   status: PrStatusSchema,
   user: z.string().optional(),
-  confirmBeforeRun: z.boolean().default(false),
+  confirm_before_run: z.boolean().default(false),
 });
 
 export const ListPrStepSchema = z
@@ -79,8 +79,8 @@ export const ListPrStepSchema = z
   .transform(({ type, options }) => ({ type, ...options }));
 
 export const MergePrWhenSchema = z.object({
-  destinationBranch: z.string().min(1),
-  waitFor: z.array(z.string().min(1)).min(1),
+  destination_branch: z.string().min(1),
+  wait_for: z.array(z.string().min(1)).min(1),
 });
 
 export const MergePrOptionsSchema = z.object({
@@ -118,7 +118,7 @@ export const PipelineStepSchema = z.union([LeafStepSchema, StepGroupSchema]);
 /** On-disk repo file shape (label comes from the filename). */
 export const RepoFileSchema = z.object({
   url: z.url(),
-  gitPlatform: GitPlatformSchema,
+  git_platform: GitPlatformSchema,
   steps: z.array(PipelineStepSchema).min(1),
 });
 
@@ -137,7 +137,7 @@ export const WorkflowInputValuesSchema = z.record(
 export const WorkflowHistoryEntrySchema = z.object({
   name: z.string(),
   lastUsed: z.array(WorkflowInputValuesSchema),
-  /** Last multi-set collect for a repeat run-workflow (full batch to reuse). */
+  /** Last multi-set collect for a repeat run_workflow (full batch to reuse). */
   lastBatch: z.array(WorkflowInputValuesSchema).optional(),
 });
 
@@ -294,7 +294,7 @@ export type ParsedRepo = {
   owner: string;
   repo: string;
   url: string;
-  gitPlatform: GitPlatform;
+  git_platform: GitPlatform;
 };
 
 /** Composite step key → precollected workflow input set(s) (length > 1 when when[].repeat) */
@@ -302,10 +302,10 @@ export type PrecollectedInputMap = Map<string, WorkflowInputValues[]>;
 
 /** First when entry with repeat:true, else undefined. */
 export function repeatActionInputId(step: RunWorkflowStep): string | undefined {
-  return step.when.find((w) => w.repeat)?.actionInputId;
+  return step.when.find((w) => w.repeat)?.action_input_id;
 }
 
-/** Composite step key → resolved create-pr source branch for this run */
+/** Composite step key → resolved create_pr source branch for this run */
 export type SourceBranchMap = Map<string, string>;
 
 /** Top-level step indices skipped during prepare (confirm Yes/Skip) */
@@ -314,7 +314,7 @@ export type SkippedStepSet = Set<number>;
 /** Top-level group index → chosen item index */
 export type SelectedSubStepMap = Map<number, number>;
 
-/** Composite step key → precollected merge-pr number */
+/** Composite step key → precollected merge_pr number */
 export type MergePrNumberMap = Map<string, number>;
 
 export function isStepGroup(step: PipelineStep): step is StepGroup {

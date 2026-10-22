@@ -93,12 +93,12 @@ async function runPipeline(opts: {
   while (true) {
     const repo = await pickRepo(config, first ? opts.repo : undefined);
     first = false;
-    const token = loadToken(repo.gitPlatform);
-    const parsed = parseRepoUrl(repo.url, repo.gitPlatform);
+    const token = loadToken(repo.git_platform);
+    const parsed = parseRepoUrl(repo.url, repo.git_platform);
     const client = createGitClient(parsed, token);
 
     p.log.info(
-      `Repo: ${repo.label} (${parsed.owner}/${parsed.repo}) [${repo.gitPlatform}]`,
+      `Repo: ${repo.label} (${parsed.owner}/${parsed.repo}) [${repo.git_platform}]`,
     );
     p.log.info(`${repo.steps.length} step(s)`);
 
@@ -241,7 +241,7 @@ type PrepareMaps = {
   precollectedInputs: PrecollectedInputMap;
 };
 
-/** one-of → selected child; top-level leaf → itself. */
+/** one_of → selected child; top-level leaf → itself. */
 function resolvePrepareLeafContext(
   step: PipelineStep,
   index: number,
@@ -279,7 +279,7 @@ async function runPrepareLeaf(
     const initial = await resolveSourceBranch(label, leaf);
     p.log.step(formatStepTitle(index, totalSteps, leaf, initial));
     const result = await confirmCreatePrStep(
-      leaf.destinationBranch,
+      leaf.destination_branch,
       initial,
       label,
       {
@@ -312,7 +312,7 @@ async function runPrepareLeaf(
         if (!sourceFailed) throw err;
         p.log.info("Enter another source branch.");
         source = await promptSourceBranch(source);
-        persistSourceBranch(label, leaf.destinationBranch, source);
+        persistSourceBranch(label, leaf.destination_branch, source);
       }
     }
   }
@@ -337,7 +337,7 @@ async function runPrepareLeaf(
   }
 
   if (leaf.type === StepType.MERGE_PR) {
-    // Collect PR# early when chosen under a one-of group
+    // Collect PR# early when chosen under a one_of group
     if (!fromOneOfGroup) return;
     const validated = await promptValidatedMergePrNumber(
       client,
@@ -349,7 +349,7 @@ async function runPrepareLeaf(
   }
 
   if (leaf.type === StepType.LIST_PR) {
-    if (!leaf.confirmBeforeRun) return;
+    if (!leaf.confirm_before_run) return;
     p.log.step(formatStepTitle(index, totalSteps, leaf));
     const ok = await confirmRunWorkflowStep();
     if (!ok) {
@@ -388,7 +388,7 @@ async function runPreparePhase(
     precollectedInputs,
   };
 
-  // one-of: pick child first
+  // one_of: pick child first
   for (const [index, step] of steps.entries()) {
     if (!isStepGroup(step)) continue;
     const subIndex = await selectSubStep(step, index, steps.length);
@@ -425,7 +425,7 @@ async function selectSubStep(
   totalSteps: number,
 ): Promise<number | "skip"> {
   const selected = await p.select({
-    message: `Which one-of item to run for ${chalk.yellow(`[${groupIndex + 1}/${totalSteps}]`)}?`,
+    message: `Which one_of item to run for ${chalk.yellow(`[${groupIndex + 1}/${totalSteps}]`)}?`,
     options: [
       ...group.items.map((child, i) => ({
         value: i as number | "skip",
@@ -486,7 +486,7 @@ async function pickRepo(
     placeholder: "Type to search…",
     options: repos.map((r) => ({
       value: r.label,
-      label: `${r.label} [${r.gitPlatform}]`,
+      label: `${r.label} [${r.git_platform}]`,
       hint: r.url,
     })),
     filter: (search, option) =>
@@ -505,11 +505,11 @@ type ParamRow = { key: string; value: string };
 
 function stepIdentity(step: LeafStep, resolvedSource?: string): string {
   if (step.type === StepType.CREATE_PR) {
-    const source = resolvedSource ?? step.sourceBranch ?? "prompt";
-    return `${source} → ${step.destinationBranch}`;
+    const source = resolvedSource ?? step.source_branch ?? "prompt";
+    return `${source} → ${step.destination_branch}`;
   }
   if (step.type === StepType.RUN_WORKFLOW) {
-    return `${step.workflow} @ ${step.useWorkflowFromBranch}`;
+    return `${step.workflow} @ ${step.use_workflow_from_branch}`;
   }
   if (step.type === StepType.LIST_PR) {
     return StepType.LIST_PR;
@@ -522,15 +522,15 @@ function stepParamRows(
   resolvedSource?: string,
 ): ParamRow[] {
   if (step.type === StepType.CREATE_PR) {
-    const source = resolvedSource ?? step.sourceBranch ?? "prompt";
+    const source = resolvedSource ?? step.source_branch ?? "prompt";
     const rows: ParamRow[] = [
       { key: "source", value: source },
-      { key: "destination", value: step.destinationBranch },
+      { key: "destination", value: step.destination_branch },
       { key: "merge", value: String(step.merge) },
       {
-        key: "afterMerge.waitFor",
+        key: "after_merge.wait_for",
         value: step.merge
-          ? step.afterMerge.waitFor.join(",") || "—"
+          ? step.after_merge.wait_for.join(",") || "—"
           : "—",
       },
     ];
@@ -541,8 +541,8 @@ function stepParamRows(
   if (step.type === StepType.LIST_PR) {
     const rows: ParamRow[] = [{ key: "status", value: step.status }];
     if (step.user) rows.push({ key: "user", value: step.user });
-    if (step.confirmBeforeRun) {
-      rows.push({ key: "confirmBeforeRun", value: "true" });
+    if (step.confirm_before_run) {
+      rows.push({ key: "confirm_before_run", value: "true" });
     }
     return rows;
   }
@@ -553,21 +553,24 @@ function stepParamRows(
     return step.when.flatMap((w, i) => {
       const prefix = step.when.length === 1 ? "when" : `when[${i}]`;
       return [
-        { key: `${prefix}.destinationBranch`, value: w.destinationBranch },
-        { key: `${prefix}.waitFor`, value: w.waitFor.join(",") },
+        { key: `${prefix}.destination_branch`, value: w.destination_branch },
+        { key: `${prefix}.wait_for`, value: w.wait_for.join(",") },
       ];
     });
   }
   const rows: ParamRow[] = [
     { key: "workflow", value: step.workflow },
-    { key: "useWorkflowFromBranch", value: step.useWorkflowFromBranch },
-    { key: "waitUntilFinish", value: String(step.waitUntilFinish) },
-    { key: "exitOnError", value: String(step.exitOnError) },
+    {
+      key: "use_workflow_from_branch",
+      value: step.use_workflow_from_branch,
+    },
+    { key: "wait_until_finish", value: String(step.wait_until_finish) },
+    { key: "exit_on_error", value: String(step.exit_on_error) },
   ];
   for (const [i, w] of step.when.entries()) {
     const prefix = step.when.length === 1 ? "when" : `when[${i}]`;
     rows.push(
-      { key: `${prefix}.actionInputId`, value: w.actionInputId },
+      { key: `${prefix}.action_input_id`, value: w.action_input_id },
       { key: `${prefix}.repeat`, value: String(w.repeat) },
     );
   }
@@ -633,7 +636,7 @@ async function runGroupStep(
 
   const subIndex = maps.selectedSubSteps.get(groupIndex);
   if (subIndex === undefined) {
-    throw new Error(`Missing one-of selection for step ${groupIndex + 1}`);
+    throw new Error(`Missing one_of selection for step ${groupIndex + 1}`);
   }
 
   const child = group.items[subIndex]!;
@@ -695,7 +698,7 @@ async function runCreatePrWithResolve(
   const source = sourceBranches.get(key);
   if (source === undefined) {
     throw new Error(
-      `Missing prepared source branch for create-pr (step key ${key})`,
+      `Missing prepared source branch for create_pr (step key ${key})`,
     );
   }
 

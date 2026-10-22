@@ -271,13 +271,13 @@ export async function waitForPrChecks(
 }
 
 export function matchWhenWaitFor(
-  when: { destinationBranch: string; waitFor: string[] }[],
+  when: { destination_branch: string; wait_for: string[] }[],
   baseRef: string | undefined,
-): { destinationBranch: string; waitFor: string[] } | undefined {
+): { destination_branch: string; wait_for: string[] } | undefined {
   if (!baseRef || when.length === 0) return undefined;
   const base = normalizeRef(baseRef);
   return when.find(
-    (entry) => normalizeRef(entry.destinationBranch) === base,
+    (entry) => normalizeRef(entry.destination_branch) === base,
   );
 }
 

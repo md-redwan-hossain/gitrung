@@ -75,19 +75,19 @@ export async function validateMergePr(
   );
 
   const matched = matchWhenWaitFor(step.when, pr.base?.ref);
-  const waitFor = matched?.waitFor ?? [];
+  const waitFor = matched?.wait_for ?? [];
   const destinationBranch =
-    matched?.destinationBranch ?? pr.base?.ref ?? "";
+    matched?.destination_branch ?? pr.base?.ref ?? "";
 
   if (matched) {
     p.log.info(
-      `when matched destination=${matched.destinationBranch}; waitFor=${matched.waitFor.join(",")}`,
+      `when matched destination=${matched.destination_branch}; wait_for=${matched.wait_for.join(",")}`,
     );
     for (const workflow of waitFor) {
       await assertWorkflowFileExists(
         client,
         workflow,
-        matched.destinationBranch,
+        matched.destination_branch,
       );
     }
   } else if (step.when.length > 0) {

@@ -188,8 +188,8 @@ export function tryLoadConfig(configDir?: string): LoadConfigResult {
   return { ok: true, config: repos, path, warnings };
 }
 
-export function loadToken(gitPlatform: GitPlatform): string {
-  if (gitPlatform === "github") {
+export function loadToken(git_platform: GitPlatform): string {
+  if (git_platform === "github") {
     const token = process.env.GITHUB_TOKEN?.trim();
     if (!token) {
       throw new Error(

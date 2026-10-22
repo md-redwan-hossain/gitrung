@@ -2,7 +2,7 @@ import type { GitPlatform, ParsedRepo } from "./schema.ts";
 
 export function parseRepoUrl(
   url: string,
-  gitPlatform: GitPlatform,
+  git_platform: GitPlatform,
 ): ParsedRepo {
   let parsed: URL;
   try {
@@ -22,13 +22,13 @@ export function parseRepoUrl(
   const repo = parts[1]!.replace(/\.git$/, "");
   const repoUrl = `${parsed.origin}/${owner}/${repo}`;
 
-  if (gitPlatform === "github") {
+  if (git_platform === "github") {
     const host = parsed.hostname.toLowerCase();
     const apiBase =
       host === "github.com" || host === "www.github.com"
         ? "https://api.github.com"
         : `${parsed.origin}/api/v3`;
-    return { apiBase, owner, repo, url: repoUrl, gitPlatform };
+    return { apiBase, owner, repo, url: repoUrl, git_platform };
   }
 
   return {
@@ -36,6 +36,6 @@ export function parseRepoUrl(
     owner,
     repo,
     url: repoUrl,
-    gitPlatform,
+    git_platform,
   };
 }

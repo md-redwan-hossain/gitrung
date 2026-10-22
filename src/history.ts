@@ -10,7 +10,6 @@ import {
   type WorkflowInputValues,
 } from "./schema.ts";
 
-const MAX_LAST_USED = 5;
 const METADATA_FILE = "metadata.jsonc";
 const LEGACY_HISTORY_FILE = "history.jsonc";
 
@@ -26,7 +25,7 @@ export function sourceBranchKey(
   label: string,
   destinationBranch: string,
 ): string {
-  return `${label}:create-pr:${destinationBranch}`;
+  return `${label}:create_pr:${destinationBranch}`;
 }
 
 function parseHistoryFile(path: string): HistoryFile {
@@ -92,16 +91,11 @@ export function recordWorkflowInputs(
   inputs: WorkflowInputValues,
 ): HistoryFile {
   const workflow = ensureWorkflowEntry(history, label, workflowName);
-
-  workflow.lastUsed = [
-    cloneInputs(inputs),
-    ...workflow.lastUsed.filter((entry) => !shallowEqual(entry, inputs)),
-  ].slice(0, MAX_LAST_USED);
-
+  workflow.lastUsed = [cloneInputs(inputs)];
   return history;
 }
 
-/** Persist a full repeat collect as lastBatch and refresh lastUsed from those sets. */
+/** Persist a full repeat collect as lastBatch and refresh lastUsed from the newest set. */
 export function recordWorkflowInputBatch(
   history: HistoryFile,
   label: string,
@@ -113,8 +107,8 @@ export function recordWorkflowInputBatch(
     .filter((inputs) => Object.keys(inputs).length > 0)
     .map(cloneInputs);
   workflow.lastBatch = cloned;
-  // Newest first in lastUsed for single-input reuse compatibility
-  workflow.lastUsed = [...cloned].reverse().slice(0, MAX_LAST_USED);
+  const newest = cloned.at(-1);
+  workflow.lastUsed = newest ? [newest] : [];
   return history;
 }
 
@@ -167,16 +161,6 @@ export function setSourceBranch(
 
 function cloneInputs(inputs: WorkflowInputValues): WorkflowInputValues {
   return { ...inputs };
-}
-
-function shallowEqual(
-  a: WorkflowInputValues,
-  b: WorkflowInputValues,
-): boolean {
-  const aKeys = Object.keys(a);
-  const bKeys = Object.keys(b);
-  if (aKeys.length !== bKeys.length) return false;
-  return aKeys.every((key) => a[key] === b[key]);
 }
 
 export function formatInputsSummary(inputs: WorkflowInputValues): string {

@@ -95,7 +95,7 @@ export async function runWorkflowStep(
       await dispatchOne(client, step, inputs, claimedRunIds, detail);
     }
   } catch (err) {
-    if (!step.exitOnError) {
+    if (!step.exit_on_error) {
       p.log.error(err instanceof Error ? err.message : String(err));
       return;
     }
@@ -130,13 +130,13 @@ async function dispatchOne(
   const dispatchedAt = new Date();
   const detailSuffix = detail ? ` (${detail})` : "";
   const dispatchSpinner = createSpinner(
-    `Dispatching ${step.workflow} on ${step.useWorkflowFromBranch}${detailSuffix}`,
+    `Dispatching ${step.workflow} on ${step.use_workflow_from_branch}${detailSuffix}`,
   ).start();
 
   try {
     await client.dispatchWorkflow(
       step.workflow,
-      step.useWorkflowFromBranch,
+      step.use_workflow_from_branch,
       toDispatchInputs(inputs),
     );
     dispatchSpinner.succeedSuccess(`Dispatched ${step.workflow}${detailSuffix}`);
@@ -145,11 +145,11 @@ async function dispatchOne(
     throw err;
   }
 
-  if (step.waitUntilFinish) {
+  if (step.wait_until_finish) {
     const runId = await waitForDispatchedWorkflowSuccess(
       client,
       step.workflow,
-      step.useWorkflowFromBranch,
+      step.use_workflow_from_branch,
       dispatchedAt,
       {
         excludeIds: claimedRunIds,
@@ -167,8 +167,12 @@ export async function validateRunWorkflowRemote(
   client: GitHostClient,
   step: RunWorkflowStep,
 ): Promise<void> {
-  await assertBranchExists(client, step.useWorkflowFromBranch);
-  await assertWorkflowFileExists(client, step.workflow, step.useWorkflowFromBranch);
+  await assertBranchExists(client, step.use_workflow_from_branch);
+  await assertWorkflowFileExists(
+    client,
+    step.workflow,
+    step.use_workflow_from_branch,
+  );
 }
 
 /** Collect one or more input sets (repeat when configured) before any dispatch. */
@@ -221,7 +225,7 @@ export async function collectWorkflowInputSets(
   const repeatDef = inputDefs[repeatId];
   if (!repeatDef) {
     throw new Error(
-      `when.actionInputId "${repeatId}" is not a workflow_dispatch input on ${step.workflow}`,
+      `when.action_input_id "${repeatId}" is not a workflow_dispatch input on ${step.workflow}`,
     );
   }
 
@@ -263,12 +267,15 @@ async function fetchWorkflowInputDefs(
 ): Promise<Record<string, YamlInput>> {
   const workflowPath = `${client.workflowsDir}/${step.workflow}`;
   const fetchSpinner = createSpinner(
-    `Fetching ${workflowPath} @ ${step.useWorkflowFromBranch}`,
+    `Fetching ${workflowPath} @ ${step.use_workflow_from_branch}`,
   ).start();
 
   let yamlText: string;
   try {
-    yamlText = await client.getFileContents(workflowPath, step.useWorkflowFromBranch);
+    yamlText = await client.getFileContents(
+      workflowPath,
+      step.use_workflow_from_branch,
+    );
     fetchSpinner.succeedInfo(`Loaded ${step.workflow}`);
   } catch (err) {
     fetchSpinner.fail(`Failed to fetch ${workflowPath}`);

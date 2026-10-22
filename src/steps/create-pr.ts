@@ -13,20 +13,20 @@ import {
   waitForWorkflowSuccess,
 } from "./pr-shared.ts";
 
-/** Source + destination branches and afterMerge waitFor workflow files on dest. */
+/** Source + destination branches and after_merge wait_for workflow files on dest. */
 export async function validateCreatePrRemote(
   client: GitHostClient,
   step: CreatePrStep,
   sourceBranch: string,
 ): Promise<void> {
   await assertBranchExists(client, sourceBranch);
-  await assertBranchExists(client, step.destinationBranch);
+  await assertBranchExists(client, step.destination_branch);
   if (!step.merge) return;
-  for (const workflow of step.afterMerge.waitFor) {
+  for (const workflow of step.after_merge.wait_for) {
     await assertWorkflowFileExists(
       client,
       workflow,
-      step.destinationBranch,
+      step.destination_branch,
     );
   }
 }
@@ -38,41 +38,41 @@ export async function runCreatePrStep(
 ): Promise<void> {
   const sourceBranch = opts.sourceBranch;
   const title =
-    step.title ?? `Merge ${sourceBranch} into ${step.destinationBranch}`;
+    step.title ?? `Merge ${sourceBranch} into ${step.destination_branch}`;
   const body =
     step.body ??
-    `Automated PR: \`${sourceBranch}\` → \`${step.destinationBranch}\``;
+    `Automated PR: \`${sourceBranch}\` → \`${step.destination_branch}\``;
 
   await validateCreatePrRemote(client, step, sourceBranch);
 
   const existing = await client.findOpenPullRequest(
     sourceBranch,
-    step.destinationBranch,
+    step.destination_branch,
   );
   if (existing) {
     p.log.warn(`Open PR already exists: #${existing.number}`);
     if (existing.html_url) p.log.info(`URL: ${existing.html_url}`);
-    p.cancel("Skipped create-pr (PR already exists).");
+    p.cancel("Skipped create_pr (PR already exists).");
     process.exit(0);
   }
 
   const compareSpinner = createSpinner(
-    `Comparing ${step.destinationBranch}...${sourceBranch}`,
+    `Comparing ${step.destination_branch}...${sourceBranch}`,
   ).start();
   try {
     const diff = await client.compare(
-      step.destinationBranch,
+      step.destination_branch,
       sourceBranch,
     );
     if (diff.total_commits === 0) {
       compareSpinner.warn("Nothing to merge (empty diff)");
       p.log.info(
-        `Skipped create-pr: ${sourceBranch} has no commits ahead of ${step.destinationBranch}; continuing.`,
+        `Skipped create_pr: ${sourceBranch} has no commits ahead of ${step.destination_branch}; continuing.`,
       );
       return;
     }
     compareSpinner.succeedInfo(
-      `${diff.total_commits} commit(s) ahead of ${step.destinationBranch}`,
+      `${diff.total_commits} commit(s) ahead of ${step.destination_branch}`,
     );
   } catch (err) {
     compareSpinner.fail("Failed to compare branches");
@@ -80,14 +80,14 @@ export async function runCreatePrStep(
   }
 
   const createPrSpinner = createSpinner(
-    `Creating PR ${sourceBranch} → ${step.destinationBranch}`,
+    `Creating PR ${sourceBranch} → ${step.destination_branch}`,
   ).start();
 
   let pr;
   try {
     pr = await client.createPullRequest({
       head: sourceBranch,
-      base: step.destinationBranch,
+      base: step.destination_branch,
       title,
       body,
     });
@@ -97,7 +97,7 @@ export async function runCreatePrStep(
     const message = err instanceof Error ? err.message : String(err);
     if (isDuplicatePrError(message)) {
       createPrSpinner.warn("PR already exists");
-      p.cancel("Skipped create-pr (duplicate PR).");
+      p.cancel("Skipped create_pr (duplicate PR).");
       process.exit(0);
     }
     createPrSpinner.fail("Failed to create PR");
@@ -132,11 +132,11 @@ export async function runCreatePrStep(
   const mergedAt = await waitForPrMerged(client, pr.number);
 
   const claimedRunIds = new Set<number>();
-  for (const workflow of step.afterMerge.waitFor) {
+  for (const workflow of step.after_merge.wait_for) {
     const runId = await waitForWorkflowSuccess(
       client,
       workflow,
-      step.destinationBranch,
+      step.destination_branch,
       mergedAt,
       { excludeIds: claimedRunIds },
     );

@@ -8,19 +8,19 @@ import {
 import type { CreatePrStep } from "./schema.ts";
 
 /**
- * Resolve create-pr source branch: config → history → prompt.
+ * Resolve create_pr source branch: config → history → prompt.
  * Saves to history when the user chooses/enters a value (not when taken from config as-is).
  */
 export async function resolveSourceBranch(
   label: string,
   step: CreatePrStep,
 ): Promise<string> {
-  if (step.sourceBranch) {
-    return step.sourceBranch;
+  if (step.source_branch) {
+    return step.source_branch;
   }
 
   const history = loadHistory();
-  const last = getSourceBranch(history, label, step.destinationBranch);
+  const last = getSourceBranch(history, label, step.destination_branch);
 
   if (last) {
     p.note(last, "Last source branch");
@@ -38,7 +38,7 @@ export async function resolveSourceBranch(
   }
 
   const entered = await promptSourceBranch(last);
-  persistSourceBranch(label, step.destinationBranch, entered);
+  persistSourceBranch(label, step.destination_branch, entered);
   return entered;
 }
 
